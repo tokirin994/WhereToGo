@@ -1,0 +1,71 @@
+package com.travelatlas.places;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.util.List;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.server.ResponseStatusException;
+
+@ExtendWith(MockitoExtension.class)
+class PlaceServiceTest {
+    @Mock private PlaceMapper mapper;
+    @InjectMocks private PlaceService service;
+
+    @Test
+    void listNormalizesBlankFilters() {
+        List<PlaceDto> expected = List.of(new PlaceDto());
+        when(mapper.findAll(isNull(), isNull(), isNull())).thenReturn(expected);
+
+        assertSame(expected, service.findAll("  ", "", null));
+    }
+
+    @Test
+    void rejectsReversedMapBounds() {
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.findInBounds(20, 5, 10, 15));
+
+        assertEquals(400, exception.getStatusCode().value());
+        verify(mapper, never()).findInBounds(any(Double.class), any(Double.class), any(Double.class), any(Double.class));
+    }
+
+    @Test
+    void createDeduplicatesAndTrimsTags() {
+        PlaceDto expected = new PlaceDto();
+        expected.setName("Cafe");
+        when(mapper.findById(any(UUID.class))).thenReturn(expected);
+        PlaceRequest request = new PlaceRequest("Cafe", "Hangzhou", null, "咖啡",
+                List.of(" coffee ", "weekend", "coffee"), null, null, null);
+
+        PlaceDto actual = service.create(request);
+
+        assertSame(expected, actual);
+        ArgumentCaptor<List<String>> tags = ArgumentCaptor.forClass(List.class);
+        verify(mapper).insertTags(tags.capture());
+        assertEquals(List.of("coffee", "weekend"), tags.getValue());
+        verify(mapper).linkTags(any(UUID.class), anyList());
+    }
+
+    @Test
+    void missingPlaceReturnsNotFound() {
+        when(mapper.findById(any(UUID.class))).thenReturn(null);
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.find(UUID.randomUUID()));
+
+        assertEquals(404, exception.getStatusCode().value());
+    }
+}

@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: travelatlas-api
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/travelatlas}
+    username: ${SPRING_DATASOURCE_USERNAME:travelatlas}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
+  flyway:
+    enabled: true
+  jackson:
+    default-property-inclusion: non_null
+mybatis:
+  mapper-locations: classpath:/mapper/*.xml
+  type-handlers-package: com.travelatlas.common
+  configuration:
+    map-underscore-to-camel-case: true
+    default-enum-type-handler: org.apache.ibatis.type.EnumTypeHandler
+server:
+  port: 8080
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

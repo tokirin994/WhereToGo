@@ -1,0 +1,52 @@
+# Environment variables and local secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+
+# Dependencies
+node_modules/
+
+# Build output and test artifacts
+dist/
+build/
+out/
+coverage/
+.next/
+.nuxt/
+.output/
+target/
+*.class
+*.jar
+*.war
+*.test
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Go and Rust caches
+/bin/
+
+# Logs and temporary files
+*.log
+.cache/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors and IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+

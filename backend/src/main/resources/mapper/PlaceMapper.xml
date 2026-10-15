@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.travelatlas.places.PlaceMapper">
+  <resultMap id="placeResult" type="com.travelatlas.places.PlaceDto">
+    <id property="id" column="id" />
+    <result property="name" column="name" />
+    <result property="city" column="city" />
+    <result property="address" column="address" />
+    <result property="category" column="category" />
+    <result property="longitude" column="longitude" />
+    <result property="latitude" column="latitude" />
+    <result property="coordinateSystem" column="coordinate_system" />
+    <result property="coordinateStatus" column="coordinate_status" />
+    <result property="coordinateSource" column="coordinate_source" />
+    <result property="createdAt" column="created_at" />
+    <result property="updatedAt" column="updated_at" />
+    <collection property="tags" ofType="java.lang.String" column="id" select="findTags" />
+  </resultMap>
+
+  <select id="findTags" resultType="string">
+    SELECT t.name FROM tags t JOIN place_tags pt ON pt.tag_id = t.id WHERE pt.place_id = #{_parameter} ORDER BY t.name
+  </select>
+  <sql id="selectColumns">
+    p.id, p.name, p.city, p.address, p.category, ST_X(p.position) AS longitude, ST_Y(p.position) AS latitude,
+    p.coordinate_system, p.coordinate_status, p.coordinate_source,
+    p.created_at, p.updated_at
+  </sql>
+  <select id="findAll" resultMap="placeResult">
+    SELECT <include refid="selectColumns" /> FROM places p
+    WHERE p.user_id = '00000000-0000-0000-0000-000000000001' AND p.deleted_at IS NULL
+    <if test="city != null">AND p.city ILIKE '%' || #{city} || '%'</if>
+    <if test="category != null">AND p.category = #{category}</if>
+    <if test="query != null">AND (p.name ILIKE '%' || #{query} || '%' OR p.address ILIKE '%' || #{query} || '%')</if>
+    ORDER BY p.created_at DESC LIMIT 500
+  </select>
+  <select id="findById" resultMap="placeResult">
+    SELECT <include refid="selectColumns" /> FROM places p
+    WHERE p.id = #{id} AND p.user_id = '00000000-0000-0000-0000-000000000001' AND p.deleted_at IS NULL
+  </select>
+  <select id="findInBounds" resultMap="placeResult">
+    SELECT <include refid="selectColumns" /> FROM places p
+    WHERE p.user_id = '00000000-0000-0000-0000-000000000001' AND p.deleted_at IS NULL AND p.position IS NOT NULL
+      AND ST_Intersects(p.position, ST_MakeEnvelope(#{minLng}, #{minLat}, #{maxLng}, #{maxLat}, 4326))
+    ORDER BY p.name LIMIT 1000
+  </select>
+  <insert id="insert">
+    INSERT INTO places (id, user_id, name, city, address, category, position, coordinate_status, coordinate_source)
+    VALUES (#{id}, '00000000-0000-0000-0000-000000000001', #{request.name}, #{request.city}, #{request.address}, #{request.category},
+      <choose><when test="request.longitude != null">ST_SetSRID(ST_MakePoint(#{request.longitude}, #{request.latitude}), 4326)</when><otherwise>NULL</otherwise></choose>,
+      <choose><when test="request.longitude != null">'user_confirmed'</when><otherwise>'pending'</otherwise></choose>,
+      <choose><when test="request.longitude != null">'manual user input'</when><otherwise>NULL</otherwise></choose>)
+  </insert>
+  <update id="update">
+    UPDATE places SET name = #{request.name}, city = #{request.city}, address = #{request.address}, category = #{request.category},
+      position = <choose><when test="request.longitude != null">ST_SetSRID(ST_MakePoint(#{request.longitude}, #{request.latitude}), 4326)</when><otherwise>NULL</otherwise></choose>,
+      coordinate_status = <choose><when test="request.longitude != null">'user_confirmed'</when><otherwise>'pending'</otherwise></choose>,
+      coordinate_source = <choose><when test="request.longitude != null">'manual user input'</when><otherwise>NULL</otherwise></choose>,
+      updated_at = now()
+    WHERE id = #{id} AND user_id = '00000000-0000-0000-0000-000000000001' AND deleted_at IS NULL
+  </update>
+  <update id="softDelete">
+    UPDATE places SET deleted_at = now(), updated_at = now()
+    WHERE id = #{id} AND user_id = '00000000-0000-0000-0000-000000000001' AND deleted_at IS NULL
+  </update>
+  <delete id="deleteTags">DELETE FROM place_tags WHERE place_id = #{placeId}</delete>
+  <insert id="insertTags">
+    INSERT INTO tags (user_id, name)
+    SELECT '00000000-0000-0000-0000-000000000001', names.name FROM (VALUES
+      <foreach collection="tags" item="tag" separator=",">(#{tag})</foreach>
+    ) AS names(name) ON CONFLICT (user_id, name) DO NOTHING;
+  </insert>
+  <insert id="linkTags">
+    INSERT INTO place_tags (place_id, tag_id)
+    SELECT #{placeId}, t.id FROM tags t
+    WHERE t.user_id = '00000000-0000-0000-0000-000000000001' AND t.name IN
+      <foreach collection="tags" item="tag" open="(" separator="," close=")">#{tag}</foreach>
+    ON CONFLICT DO NOTHING
+  </insert>
+</mapper>
