@@ -10,6 +10,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -27,7 +28,7 @@ class PlaceServiceTest {
 
     @Test
     void listNormalizesBlankFilters() {
-        List<PlaceDto> expected = List.of(new PlaceDto());
+        List<PlaceDto> expected = Arrays.asList(new PlaceDto());
         when(mapper.findAll(isNull(), isNull(), isNull())).thenReturn(expected);
 
         assertSame(expected, service.findAll("  ", "", null));
@@ -38,7 +39,7 @@ class PlaceServiceTest {
         ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> service.findInBounds(20, 5, 10, 15));
 
-        assertEquals(400, exception.getStatusCode().value());
+        assertEquals(400, exception.getRawStatusCode());
         verify(mapper, never()).findInBounds(any(Double.class), any(Double.class), any(Double.class), any(Double.class));
     }
 
@@ -47,15 +48,18 @@ class PlaceServiceTest {
         PlaceDto expected = new PlaceDto();
         expected.setName("Cafe");
         when(mapper.findById(any(UUID.class))).thenReturn(expected);
-        PlaceRequest request = new PlaceRequest("Cafe", "Hangzhou", null, "咖啡",
-                List.of(" coffee ", "weekend", "coffee"), null, null, null);
+        PlaceRequest request = new PlaceRequest();
+        request.setName("Cafe");
+        request.setCity("Hangzhou");
+        request.setCategory("咖啡");
+        request.setTags(Arrays.asList(" coffee ", "weekend", "coffee"));
 
         PlaceDto actual = service.create(request);
 
         assertSame(expected, actual);
         ArgumentCaptor<List<String>> tags = ArgumentCaptor.forClass(List.class);
         verify(mapper).insertTags(tags.capture());
-        assertEquals(List.of("coffee", "weekend"), tags.getValue());
+        assertEquals(Arrays.asList("coffee", "weekend"), tags.getValue());
         verify(mapper).linkTags(any(UUID.class), anyList());
     }
 
@@ -66,6 +70,6 @@ class PlaceServiceTest {
         ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> service.find(UUID.randomUUID()));
 
-        assertEquals(404, exception.getStatusCode().value());
+        assertEquals(404, exception.getRawStatusCode());
     }
 }

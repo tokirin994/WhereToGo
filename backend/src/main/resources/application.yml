@@ -16,7 +16,7 @@ mybatis:
     map-underscore-to-camel-case: true
     default-enum-type-handler: org.apache.ibatis.type.EnumTypeHandler
 server:
-  port: 8080
+  port: ${PORT:8080}
 springdoc:
   swagger-ui:
     path: /swagger-ui.html

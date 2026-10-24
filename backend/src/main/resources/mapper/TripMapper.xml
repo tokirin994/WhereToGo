@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.travelatlas.trips.TripMapper">
+  <resultMap id="tripResult" type="com.travelatlas.trips.TripDto">
+    <id property="id" column="id" />
+    <result property="name" column="name" />
+    <result property="destination" column="destination" />
+    <result property="startsOn" column="starts_on" />
+    <result property="endsOn" column="ends_on" />
+    <result property="status" column="status" />
+    <result property="notes" column="notes" />
+    <collection property="stops" ofType="com.travelatlas.trips.TripStopDto" column="id" select="findStops" />
+  </resultMap>
+  <resultMap id="stopResult" type="com.travelatlas.trips.TripStopDto">
+    <id property="id" column="id" />
+    <result property="placeId" column="place_id" />
+    <result property="dayDate" column="day_date" />
+    <result property="placeName" column="place_name" />
+    <result property="category" column="category" />
+    <result property="startsAt" column="starts_at" />
+    <result property="durationMinutes" column="duration_minutes" />
+    <result property="note" column="note" />
+    <result property="sortOrder" column="sort_order" />
+  </resultMap>
+  <select id="findStops" resultMap="stopResult">
+    SELECT id, place_id, day_date, place_name, category, starts_at, duration_minutes, note, sort_order
+    FROM trip_stops WHERE trip_id = #{_parameter} ORDER BY day_date, sort_order, starts_at
+  </select>
+  <select id="findAll" resultMap="tripResult">
+    SELECT id, name, destination, starts_on, ends_on, status, notes FROM trips
+    WHERE user_id = '00000000-0000-0000-0000-000000000001' AND deleted_at IS NULL
+    ORDER BY starts_on NULLS LAST, created_at DESC
+  </select>
+  <select id="findById" resultMap="tripResult">
+    SELECT id, name, destination, starts_on, ends_on, status, notes FROM trips
+    WHERE id = #{id} AND user_id = '00000000-0000-0000-0000-000000000001' AND deleted_at IS NULL
+  </select>
+  <insert id="insert">
+    INSERT INTO trips (id, user_id, name, destination, starts_on, ends_on, notes)
+    VALUES (#{id}, '00000000-0000-0000-0000-000000000001', #{request.name}, #{request.destination}, #{request.startsOn}, #{request.endsOn}, COALESCE(#{request.notes}, ''))
+  </insert>
+  <update id="update">
+    UPDATE trips SET name = #{request.name}, destination = #{request.destination}, starts_on = #{request.startsOn},
+      ends_on = #{request.endsOn}, notes = COALESCE(#{request.notes}, ''), updated_at = now()
+    WHERE id = #{id} AND user_id = '00000000-0000-0000-0000-000000000001' AND deleted_at IS NULL
+  </update>
+  <select id="countStopsOutsideRange" resultType="int">
+    SELECT count(*) FROM trip_stops WHERE trip_id = #{id}
+    <trim prefix="AND (" suffix=")" prefixOverrides="OR">
+      <if test="request.startsOn != null">OR day_date &lt; #{request.startsOn}</if>
+      <if test="request.endsOn != null">OR day_date &gt; #{request.endsOn}</if>
+    </trim>
+  </select>
+  <update id="softDelete">
+    UPDATE trips SET deleted_at = now(), updated_at = now()
+    WHERE id = #{id} AND user_id = '00000000-0000-0000-0000-000000000001' AND deleted_at IS NULL
+  </update>
+  <delete id="deleteStops">DELETE FROM trip_stops WHERE trip_id = #{tripId}</delete>
+  <insert id="insertStops">
+    INSERT INTO trip_stops (id, trip_id, place_id, day_date, place_name, category, starts_at, duration_minutes, note, sort_order)
+    VALUES
+    <foreach collection="stops" item="stop" separator=",">
+      (#{stop.id}, #{tripId}, #{stop.placeId}, #{stop.dayDate}, #{stop.placeName}, #{stop.category},
+       #{stop.startsAt}, #{stop.durationMinutes}, #{stop.note}, #{stop.sortOrder})
+    </foreach>
+  </insert>
+</mapper>

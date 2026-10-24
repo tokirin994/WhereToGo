@@ -1,6 +1,6 @@
 package com.travelatlas.places;
 
-import jakarta.validation.Valid;
+import javax.validation.Valid;
 import java.net.URI;
 import java.util.List;
 import java.util.UUID;

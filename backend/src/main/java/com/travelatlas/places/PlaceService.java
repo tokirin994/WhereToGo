@@ -29,13 +29,13 @@ public class PlaceService {
     public PlaceDto create(PlaceRequest request) {
         UUID id = UUID.randomUUID();
         mapper.insert(id, request);
-        replaceTags(id, request.tags());
+        replaceTags(id, request.getTags());
         return find(id);
     }
     @Transactional
     public PlaceDto update(UUID id, PlaceRequest request) {
         if (mapper.update(id, request) == 0) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "地点不存在");
-        replaceTags(id, request.tags());
+        replaceTags(id, request.getTags());
         return find(id);
     }
     public void delete(UUID id) {
@@ -44,12 +44,12 @@ public class PlaceService {
     private void replaceTags(UUID id, List<String> tags) {
         mapper.deleteTags(id);
         if (tags != null && !tags.isEmpty()) {
-            List<String> normalized = tags.stream().map(String::trim).filter(s -> !s.isEmpty()).distinct().toList();
+            List<String> normalized = tags.stream().map(String::trim).filter(s -> !s.isEmpty()).distinct().collect(java.util.stream.Collectors.toList());
             if (!normalized.isEmpty()) {
                 mapper.insertTags(normalized);
                 mapper.linkTags(id, normalized);
             }
         }
     }
-    private String blankToNull(String value) { return value == null || value.isBlank() ? null : value.trim(); }
+    private String blankToNull(String value) { return value == null || value.trim().isEmpty() ? null : value.trim(); }
 }

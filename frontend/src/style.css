@@ -164,6 +164,33 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .trip-popover { position: absolute; z-index: 6; left: 17px; right: 17px; top: calc(100% - 8px); padding: 11px; display: grid; gap: 8px; border-radius: 8px; border: 1px solid #e6ebe5; background: white; box-shadow: 0 10px 24px #283a2b1b; font-size: 10px; }
 .trip-popover button { display: flex; align-items: center; gap: 6px; background: #f4f8f4; border: 0; border-radius: 6px; color: #4a7655; padding: 7px; text-align: left; cursor: pointer; }
 .trip-popover small { color: #9ca69f; font-size: 9px; }
+.trip-popover .trip-option { justify-content: space-between; gap: 5px; color: #536157; background: #fff; border: 1px solid #edf1ed; }
+.trip-popover .trip-option.selected { border-color: #bfd5c1; background: #f5faf5; }
+.trip-popover .trip-option span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trip-popover .trip-danger { justify-content: center; color: #ad5f57; background: #fff6f5; }
+.day-arrows { display: flex; gap: 2px; }
+.day-arrows .icon-button:disabled { opacity: .32; cursor: default; }
+.arrow-left { transform: rotate(180deg); }
+.day-tabs { display: flex; gap: 5px; overflow-x: auto; margin: -5px 0 13px; padding-bottom: 2px; }
+.day-tabs button { flex: none; display: flex; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid #e7ede7; border-radius: 6px; color: #77867a; background: white; font-size: 9px; cursor: pointer; }
+.day-tabs button.chosen { border-color: #bfd5c1; color: #477653; background: #f2f8f2; }
+.day-tabs small { font-size: 8px; color: #9aa79c; }
+.stop-card-wrap { min-width: 0; }
+.stop-actions { display: flex; gap: 4px; margin: 4px 0 0 5px; opacity: .72; }
+.stop-actions button { padding: 2px 6px; border: 1px solid #e9eee9; border-radius: 5px; background: #fff; color: #728276; font-size: 8px; cursor: pointer; }
+.stop-actions button:hover { color: #3f7654; border-color: #b9d0bc; }
+.stop-actions button:last-child { color: #ad5f57; }
+.stop-note { display: block; margin: 5px 0 0 5px; color: #8d9b90; font-size: 8px; }
+.itinerary-empty { min-height: 125px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; color: #91a094; text-align: center; }
+.itinerary-empty strong { color: #66766a; font-size: 10px; }
+.itinerary-empty span { font-size: 8px; }
+.date-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dialog-hint { margin: 12px 0 0; color: #8d9a90; font-size: 9px; line-height: 1.6; }
+.memo-field { height: 220px; padding: 10px 11px; resize: vertical; line-height: 1.65; }
+.theme-dark .trip-popover, .theme-dark .trip-popover .trip-option, .theme-dark .day-tabs button, .theme-dark .stop-actions button { color: #d3ddd5; background: #26352b; border-color: #435247; }
+.theme-dark .trip-popover .trip-option.selected, .theme-dark .day-tabs button.chosen { background: #2c3d31; border-color: #58745e; }
+.theme-dark .trip-popover .trip-danger { color: #e5aaa4; background: #3b2c2b; }
+.theme-dark .itinerary-empty strong { color: #cfdbd1; }
 .itinerary-content { flex: 1; min-height: 0; overflow: auto; padding: 16px 17px 13px; scrollbar-width: thin; scrollbar-color: #e4e9e4 transparent; }
 .itinerary-topline { display: flex; align-items: center; justify-content: space-between; }
 .itinerary-topline > div { display: flex; align-items: center; gap: 9px; }
@@ -202,6 +229,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .add-stop-button { width: calc(100% - 71px); height: 31px; margin: 7px 0 16px 71px; display: flex; justify-content: center; align-items: center; gap: 5px; border: 1px dashed #dbe4dc; border-radius: 7px; background: #fbfdfb; color: #829487; font-size: 9px; cursor: pointer; }
 .add-stop-button:hover { background: #f2f8f2; color: #507b5b; border-color: #b9d0bc; }
 .selected-place-card { margin-top: 1px; padding: 10px; border: 1px solid #e8eee8; border-radius: 9px; background: #fbfdfb; }
+.place-detail-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 7px; }
+.place-detail-actions .detail-link { margin-top: 0; }
+.delete-place-action { color: #b45b55; }
 .selected-place-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .selected-place-head .section-label { font-size: 8px; color: #93a197; }
 .selected-place-head .icon-button { width: 24px; height: 24px; }

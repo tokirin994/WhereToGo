@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { createPlace, fetchPlaces, type PlaceRecord } from '../api/places'
+import { createPlace, deletePlace, fetchPlaces, updatePlace, type CreatePlaceInput, type PlaceRecord } from '../api/places'
 
 export type PlaceCategory = '景点' | '美食' | '咖啡' | '住宿'
 export type DemoMapPosition = { x: number; y: number }
@@ -8,6 +8,10 @@ export type Place = {
   tags: string[]; thumb: 'lake' | 'temple' | 'food' | 'cafe' | 'hotel'
   mapPosition: DemoMapPosition | null; favorite: boolean
   longitude?: number | null; latitude?: number | null; coordinateStatus?: string
+}
+
+function isApiPlaceId(id: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
 }
 
 function placeFromApi(record: PlaceRecord): Place {
@@ -68,10 +72,10 @@ export const usePlacesStore = defineStore('places', {
         this.apiConnected = false
       }
     },
-    async addPlace(name: string, category: PlaceCategory, city: string) {
-      const place: Place = { id: `place-${crypto.randomUUID()}`, name, city: city.trim() || '未指定城市', address: '地址待确认', category, tags: [], thumb: category === '美食' ? 'food' : category === '咖啡' ? 'cafe' : category === '住宿' ? 'hotel' : 'lake', mapPosition: null, favorite: false }
+    async addPlace(name: string, category: PlaceCategory, city: string, address = '地址待确认', tags: string[] = []) {
+      const place: Place = { id: `place-${crypto.randomUUID()}`, name, city: city.trim() || '未指定城市', address, category, tags, thumb: category === '美食' ? 'food' : category === '咖啡' ? 'cafe' : category === '住宿' ? 'hotel' : 'lake', mapPosition: null, favorite: false }
       try {
-        const record = await createPlace({ name, category, city: place.city, address: place.address, tags: [] })
+        const record = await createPlace({ name, category, city: place.city, address: place.address, tags })
         const saved = placeFromApi(record)
         this.places.unshift(saved)
         this.apiConnected = true
@@ -84,6 +88,23 @@ export const usePlacesStore = defineStore('places', {
         this.persist()
         return { place, persisted: false }
       }
+    },
+    async updatePlace(id: string, input: CreatePlaceInput) {
+      const current = this.places.find((item) => item.id === id)
+      if (!current) throw new Error('地点不存在')
+      if (isApiPlaceId(id)) {
+        const saved = placeFromApi(await updatePlace(id, input))
+        Object.assign(current, saved, { favorite: current.favorite })
+      } else {
+        Object.assign(current, { name: input.name, city: input.city, address: input.address, category: input.category, tags: input.tags, thumb: input.category === '美食' ? 'food' : input.category === '咖啡' ? 'cafe' : input.category === '住宿' ? 'hotel' : 'lake' })
+      }
+      this.persist()
+      return current
+    },
+    async deletePlace(id: string) {
+      if (isApiPlaceId(id)) await deletePlace(id)
+      this.places = this.places.filter((item) => item.id !== id)
+      this.persist()
     },
     toggleFavorite(id: string) { const place = this.places.find((item) => item.id === id); if (place) { place.favorite = !place.favorite; this.persist() } },
     isFavorite(id: string) { return this.places.find((item) => item.id === id)?.favorite ?? false },

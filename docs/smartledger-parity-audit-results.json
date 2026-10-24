@@ -1,0 +1,374 @@
+{
+  "date": "2026-10-24",
+  "timezone": "Asia/Hong_Kong",
+  "method": "Execute current TypeScript core and extracted Vue handlers with isolated in-memory fixtures; native expectations from local Swift source. IndexedDB uses fake-indexeddb. No browser or real cloud login.",
+  "counts": {
+    "total": 30,
+    "matches": 30,
+    "differences": 0
+  },
+  "results": [
+    {
+      "id": "collect-category-descendant",
+      "status": "matches",
+      "expected": [
+        "auto"
+      ],
+      "actual": [
+        "auto"
+      ]
+    },
+    {
+      "id": "collect-outside-date-range",
+      "status": "matches",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "id": "collect-requires-date-bound",
+      "status": "matches",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "id": "collect-local-midnight-hong-kong",
+      "status": "matches",
+      "expected": [
+        "auto"
+      ],
+      "actual": [
+        "auto"
+      ]
+    },
+    {
+      "id": "collect-all-expenses-token",
+      "status": "matches",
+      "expected": [
+        "auto"
+      ],
+      "actual": [
+        "auto"
+      ]
+    },
+    {
+      "id": "collect-all-income-token",
+      "status": "matches",
+      "expected": [
+        "auto"
+      ],
+      "actual": [
+        "auto"
+      ]
+    },
+    {
+      "id": "manual-default-prompt-select-category-then-save",
+      "status": "matches",
+      "expected": [
+        "auto"
+      ],
+      "actual": [
+        "auto"
+      ]
+    },
+    {
+      "id": "manual-prompt-off-append-auto-to-selected-book",
+      "status": "matches",
+      "expected": [
+        "auto",
+        "manual"
+      ],
+      "actual": [
+        "auto",
+        "manual"
+      ]
+    },
+    {
+      "id": "decline-history-backfill-keeps-future-collection",
+      "status": "matches",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "id": "changed-enabled-rules-can-collect-history",
+      "status": "matches",
+      "expected": [
+        "auto"
+      ],
+      "actual": [
+        "auto"
+      ]
+    },
+    {
+      "id": "installment-native-rounding-last-adjusts",
+      "status": "matches",
+      "expected": [
+        33.33,
+        33.33,
+        33.34
+      ],
+      "actual": [
+        33.33,
+        33.33,
+        33.34
+      ]
+    },
+    {
+      "id": "installment-total-and-metadata",
+      "status": "matches",
+      "expected": {
+        "cents": 10000,
+        "indices": [
+          1,
+          2,
+          3
+        ],
+        "groupCount": 1,
+        "total": 100
+      },
+      "actual": {
+        "cents": 10000,
+        "indices": [
+          1,
+          2,
+          3
+        ],
+        "groupCount": 1,
+        "total": 100
+      }
+    },
+    {
+      "id": "installment-month-end-clamp",
+      "status": "matches",
+      "expected": [
+        31,
+        28,
+        31
+      ],
+      "actual": [
+        31,
+        28,
+        31
+      ]
+    },
+    {
+      "id": "installment-independent-start-month",
+      "status": "matches",
+      "expected": "2026-03-01",
+      "actual": "2026-03-01"
+    },
+    {
+      "id": "installment-reimbursement-50pct-of-total",
+      "status": "matches",
+      "expected": 50,
+      "actual": 50
+    },
+    {
+      "id": "editing-installment-keeps-original-reimbursement-ratio",
+      "status": "matches",
+      "expected": 50,
+      "actual": 50
+    },
+    {
+      "id": "indexeddb-installment-and-book-rules-roundtrip",
+      "status": "matches",
+      "expected": "all snapshot fields preserved",
+      "actual": "all snapshot fields preserved"
+    },
+    {
+      "id": "failed-manual-local-write-does-not-leave-duplicate-rows",
+      "status": "matches",
+      "expected": {
+        "count": 0,
+        "error": "simulated storage failure",
+        "busy": false
+      },
+      "actual": {
+        "count": 0,
+        "error": "simulated storage failure",
+        "busy": false
+      }
+    },
+    {
+      "id": "failed-book-local-write-rolls-back-rule-changes",
+      "status": "matches",
+      "expected": {
+        "enabled": false,
+        "error": "simulated storage failure",
+        "busy": false
+      },
+      "actual": {
+        "enabled": false,
+        "error": "simulated storage failure",
+        "busy": false
+      }
+    },
+    {
+      "id": "edit-existing-transaction-converts-to-installments",
+      "status": "matches",
+      "expected": 3,
+      "actual": 3
+    },
+    {
+      "id": "recommend-date-span-auto-priority-and-creation-order",
+      "status": "matches",
+      "expected": [
+        "narrow-new",
+        "narrow-old",
+        "wide",
+        "manual-only"
+      ],
+      "actual": [
+        "narrow-new",
+        "narrow-old",
+        "wide",
+        "manual-only"
+      ]
+    },
+    {
+      "id": "recommendation-not-restricted-by-collection-category",
+      "status": "matches",
+      "expected": 4,
+      "actual": 4
+    },
+    {
+      "id": "reapply-rules-removes-only-target-book-link",
+      "status": "matches",
+      "expected": {
+        "removed": 1,
+        "added": 0,
+        "books": [
+          "other"
+        ]
+      },
+      "actual": {
+        "added": 0,
+        "removed": 1,
+        "books": [
+          "other"
+        ]
+      }
+    },
+    {
+      "id": "cancel-installments-merges-and-relinks-offset",
+      "status": "matches",
+      "expected": {
+        "count": 2,
+        "amount": 100,
+        "group": null,
+        "title": "电脑",
+        "source": "1e7498d2-506a-488f-afee-5ffdbbeb9c50"
+      },
+      "actual": {
+        "count": 2,
+        "amount": 100,
+        "group": null,
+        "title": "电脑",
+        "source": "1e7498d2-506a-488f-afee-5ffdbbeb9c50"
+      }
+    },
+    {
+      "id": "payoff-sums-future-and-removes-future-rows",
+      "status": "matches",
+      "expected": {
+        "amount": 66.67,
+        "count": 2,
+        "pastKept": true,
+        "futureRemoved": true
+      },
+      "actual": {
+        "amount": 66.67,
+        "count": 2,
+        "pastKept": true,
+        "futureRemoved": true
+      }
+    },
+    {
+      "id": "payoff-repeated-action-is-rejected",
+      "status": "matches",
+      "expected": "这笔分期已经立即还清",
+      "actual": "这笔分期已经立即还清"
+    },
+    {
+      "id": "editing-one-installment-does-not-resplit",
+      "status": "matches",
+      "expected": {
+        "count": 3,
+        "months": 3,
+        "index": 2,
+        "group": "f5ff8796-4078-4c81-9c3b-1b01f773f02e"
+      },
+      "actual": {
+        "count": 3,
+        "months": 3,
+        "index": 2,
+        "group": "f5ff8796-4078-4c81-9c3b-1b01f773f02e"
+      }
+    },
+    {
+      "id": "independent-splits-for-each-linked-ledger",
+      "status": "matches",
+      "expected": [
+        30,
+        45
+      ],
+      "actual": [
+        30,
+        45
+      ]
+    },
+    {
+      "id": "per-ledger-splits-persist-through-local-storage",
+      "status": "matches",
+      "expected": {
+        "auto": {
+          "paidByParticipantId": "我",
+          "splitParticipantIds": [
+            "我",
+            "小明"
+          ],
+          "splitMode": "ratio",
+          "splitRatio": 30,
+          "splitAmount": null
+        },
+        "second": {
+          "paidByParticipantId": "小明",
+          "splitParticipantIds": [
+            "我",
+            "小明"
+          ],
+          "splitMode": "fixed",
+          "splitRatio": null,
+          "splitAmount": 45
+        }
+      },
+      "actual": {
+        "auto": {
+          "paidByParticipantId": "我",
+          "splitParticipantIds": [
+            "我",
+            "小明"
+          ],
+          "splitMode": "ratio",
+          "splitRatio": 30,
+          "splitAmount": null
+        },
+        "second": {
+          "paidByParticipantId": "小明",
+          "splitParticipantIds": [
+            "我",
+            "小明"
+          ],
+          "splitMode": "fixed",
+          "splitRatio": null,
+          "splitAmount": 45
+        }
+      }
+    },
+    {
+      "id": "ocr-explicit-no-book-stays-unassigned",
+      "status": "matches",
+      "expected": [],
+      "actual": []
+    }
+  ]
+}
