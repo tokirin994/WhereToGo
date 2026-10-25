@@ -17,7 +17,7 @@ jobs:
       VITE_SMARTLEDGER_API_URL: https://ledger-api.example.com
       VITE_SMARTLEDGER_PUBLIC_URL: https://ledger.example.com
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -33,7 +33,7 @@ jobs:
       run:
         working-directory: ${{ matrix.directory }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
