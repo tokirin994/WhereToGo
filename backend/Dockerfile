@@ -1,9 +1,9 @@
-FROM eclipse-temurin:8-jdk AS build
+FROM eclipse-temurin:25-jdk AS build
 WORKDIR /workspace
 COPY . .
 RUN sed -i 's/\r$//' mvnw && chmod +x mvnw && ./mvnw -B -DskipTests package
 
-FROM eclipse-temurin:8-jre
+FROM eclipse-temurin:25-jre
 WORKDIR /app
 COPY --chown=10001:10001 --from=build /workspace/target/travelatlas-api-0.1.0-SNAPSHOT.jar app.jar
 USER 10001:10001
