@@ -1,0 +1,78 @@
+{
+  "date": "2026-10-25T13:40:44.962Z",
+  "method": "Real local OIDC PKCE, Java8 API, PostgreSQL, public provider calls. No browser automation. Isolated disposable user; no user travel records modified.",
+  "results": [
+    {
+      "name": "Real OIDC authorization code + PKCE login",
+      "result": "PASS"
+    },
+    {
+      "name": "New account starts without demo trips",
+      "result": "PASS"
+    },
+    {
+      "name": "Trip creation persists preferences and budget",
+      "result": "PASS"
+    },
+    {
+      "name": "Batch places persist real coordinates and favorite",
+      "result": "PASS"
+    },
+    {
+      "name": "Place collections persist membership",
+      "result": "PASS"
+    },
+    {
+      "name": "Stop edits preserve IDs, cost and completion",
+      "result": "PASS"
+    },
+    {
+      "name": "Local drafting previews without replacing original stops",
+      "result": "PASS"
+    },
+    {
+      "name": "Java backend retrieves a real OSRM road route",
+      "result": "PASS"
+    },
+    {
+      "name": "Java backend retrieves real Photon name search candidates",
+      "result": "PASS"
+    },
+    {
+      "name": "Java backend retrieves real Open-Meteo forecast",
+      "result": "PASS"
+    },
+    {
+      "name": "Java backend retrieves destination search candidates",
+      "result": "PASS"
+    },
+    {
+      "name": "Rescheduling atomically shifts existing stops",
+      "result": "PASS"
+    },
+    {
+      "name": "Duplicate trip resets completion",
+      "result": "PASS"
+    },
+    {
+      "name": "Transactional trip import",
+      "result": "PASS"
+    },
+    {
+      "name": "Invalid import rolls back without an orphan trip",
+      "result": "PASS"
+    },
+    {
+      "name": "Deleting a place preserves the itinerary text and detaches its reference",
+      "result": "PASS"
+    },
+    {
+      "name": "Anonymous requests remain unauthorized",
+      "result": "PASS"
+    },
+    {
+      "name": "Temporary account and its test records removed",
+      "result": "PASS"
+    }
+  ]
+}

@@ -1,59 +1,22 @@
 import type { LedgerSnapshot } from './ledger'
-
-export interface NutstoreCredentials {
-  username: string
-  appPassword: string
+import { authorizedRequest, apiError } from './apiClient'
+export interface NutstoreCredentials {username:string;appPassword:string}
+export interface NutstoreStatus {available:boolean;configured:boolean;needsUpdate?:boolean;usernameMasked?:string;updatedAt?:string}
+const settingsKey=(accountKey:string)=>`smartledger-nutstore:${accountKey}`
+/** Legacy values are read into memory solely for migration; new writes never use Web Storage. */
+export function readNutstoreCredentials(accountKey:string):NutstoreCredentials{
+  try{const key=settingsKey(accountKey);const value=JSON.parse(sessionStorage.getItem(key)||localStorage.getItem(key)||'{}');return {username:value.username||'',appPassword:value.appPassword||''}}
+  catch{return {username:'',appPassword:''}}
 }
-
-const settingsKey = (accountKey: string) => `smartledger-nutstore:${accountKey}`
-
-export function readNutstoreCredentials(accountKey: string): NutstoreCredentials {
-  try {
-    const value = JSON.parse(localStorage.getItem(settingsKey(accountKey)) || '{}') as Partial<NutstoreCredentials>
-    return { username: value.username || '', appPassword: value.appPassword || '' }
-  } catch {
-    return { username: '', appPassword: '' }
-  }
-}
-
-export function writeNutstoreCredentials(accountKey: string, credentials: NutstoreCredentials): void {
-  localStorage.setItem(settingsKey(accountKey), JSON.stringify(credentials))
-}
-
-export function clearNutstoreCredentials(accountKey: string): void {
-  localStorage.removeItem(settingsKey(accountKey))
-}
-
-async function post<T>(apiUrl: string, token: string, endpoint: string, credentials: NutstoreCredentials, snapshot?: LedgerSnapshot): Promise<T> {
-  const response = await fetch(`${apiUrl}/api/v1/sync/nutstore/${endpoint}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(snapshot ? { credentials, snapshot } : credentials),
-  })
-  if (!response.ok) {
-    let message = `坚果云请求失败（${response.status}）`
-    try {
-      const body = await response.json() as { message?: string; error?: string }
-      message = body.message || body.error || message
-    } catch { /* keep status fallback */ }
-    throw new Error(message)
-  }
+export function clearNutstoreCredentials(accountKey:string){for(const name of ['sessionStorage','localStorage'] as const)try{window[name].removeItem(settingsKey(accountKey))}catch{/* May be unavailable. */}}
+async function request<T>(apiUrl:string,token:string,path:string,method='POST',body?:unknown):Promise<T>{
+  const response=await authorizedRequest(apiUrl,token,`/api/v1/sync/nutstore/${path}`,{method,...(body!==undefined?{body:JSON.stringify(body)}:{})})
+  if(!response.ok)throw await apiError(response,'坚果云请求失败')
   return await response.json() as T
 }
-
-export async function testNutstore(apiUrl: string, token: string, credentials: NutstoreCredentials): Promise<string> {
-  const result = await post<{ message: string }>(apiUrl, token, 'test', credentials)
-  return result.message
-}
-
-export async function backupToNutstore(apiUrl: string, token: string, credentials: NutstoreCredentials, snapshot: LedgerSnapshot): Promise<string> {
-  const result = await post<{ message: string }>(apiUrl, token, 'upload', credentials, snapshot)
-  return result.message
-}
-
-export async function restoreFromNutstore(apiUrl: string, token: string, credentials: NutstoreCredentials): Promise<LedgerSnapshot> {
-  return await post<LedgerSnapshot>(apiUrl, token, 'download', credentials)
-}
+export const getNutstoreStatus=(api:string,token:string)=>request<NutstoreStatus>(api,token,'credentials','GET')
+export const writeNutstoreCredentials=(api:string,token:string,credentials:NutstoreCredentials)=>request<NutstoreStatus>(api,token,'credentials','PUT',credentials)
+export const deleteNutstoreCredentials=(api:string,token:string)=>request<NutstoreStatus>(api,token,'credentials','DELETE')
+export async function testNutstore(api:string,token:string){return (await request<{message:string}>(api,token,'test')).message}
+export async function backupToNutstore(api:string,token:string,snapshot:LedgerSnapshot){return (await request<{message:string}>(api,token,'upload','POST',{snapshot})).message}
+export const restoreFromNutstore=(api:string,token:string)=>request<LedgerSnapshot>(api,token,'download')

@@ -1,5 +1,6 @@
 import type { LedgerSnapshot } from './ledger'
 import { readSyncMetadata, writeSyncMetadata } from './storage'
+import { authorizedRequest, apiError } from './apiClient'
 
 export interface RemoteSnapshot {
   schemaVersion: number; revision: number; contentHash: string | null
@@ -15,20 +16,20 @@ export function fingerprint(snapshot: LedgerSnapshot): string {
 }
 
 export async function getRemoteSnapshot(apiUrl: string, token: string): Promise<RemoteSnapshot> {
-  const response = await fetch(`${apiUrl}/api/v1/sync/snapshot`, { headers: { Authorization: `Bearer ${token}` } })
-  if (!response.ok) throw new Error(`读取云端账本失败（HTTP ${response.status}）`)
+  const response = await authorizedRequest(apiUrl, token, '/api/v1/sync/snapshot')
+  if (!response.ok) throw await apiError(response,'读取云端账本失败')
   return await response.json() as RemoteSnapshot
 }
 
 export async function pushSnapshot(apiUrl: string, token: string, accountKey: string, snapshot: LedgerSnapshot, expectedRevision?: number): Promise<RemoteSnapshot> {
   const metadata = readSyncMetadata(accountKey)
   const remote = await getRemoteSnapshot(apiUrl, token)
-  const response = await fetch(`${apiUrl}/api/v1/sync/snapshot`, {
+  const response = await authorizedRequest(apiUrl, token, '/api/v1/sync/snapshot', {
     method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ schemaVersion: snapshot.schemaVersion, expectedRevision: expectedRevision ?? remote.revision, snapshot }),
   })
   if (response.status === 409) throw new Error('云端版本已经变化，请先执行智能同步并处理冲突。')
-  if (!response.ok) throw new Error(`推送云端账本失败（HTTP ${response.status}）`)
+  if (!response.ok) throw await apiError(response,'推送云端账本失败')
   const result = await response.json() as RemoteSnapshot
   writeSyncMetadata(accountKey, { revision: result.revision, lastFingerprint: fingerprint(snapshot), lastSyncedAt: result.updatedAt })
   void metadata

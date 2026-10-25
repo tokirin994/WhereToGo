@@ -5,10 +5,18 @@ spring:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/travelatlas}
     username: ${SPRING_DATASOURCE_USERNAME:travelatlas}
     password: ${SPRING_DATASOURCE_PASSWORD:}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:4}
+      minimum-idle: 0
+      connection-timeout: 15000
+      idle-timeout: 60000
   flyway:
     enabled: true
+    table: ${FLYWAY_HISTORY_TABLE:flyway_schema_history}
   jackson:
     default-property-inclusion: non_null
+    deserialization:
+      fail-on-unknown-properties: true
 mybatis:
   mapper-locations: classpath:/mapper/*.xml
   type-handlers-package: com.travelatlas.common
@@ -16,12 +24,62 @@ mybatis:
     map-underscore-to-camel-case: true
     default-enum-type-handler: org.apache.ibatis.type.EnumTypeHandler
 server:
+  forward-headers-strategy: none
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+  tomcat:
+    max-http-form-post-size: 1MB
+    max-swallow-size: 1MB
+    connection-timeout: 20000
+    threads:
+      max: ${HTTP_MAX_THREADS:32}
+      min-spare: 2
   port: ${PORT:8080}
 springdoc:
+  api-docs:
+    enabled: ${API_DOCS_ENABLED:false}
   swagger-ui:
     path: /swagger-ui.html
+    enabled: ${API_DOCS_ENABLED:false}
 management:
   endpoints:
     web:
       exposure:
         include: health,info
+
+travel:
+  geocoder:
+    provider: ${TRAVEL_GEOCODER_PROVIDER:photon}
+    url: ${TRAVEL_GEOCODER_URL:https://photon.komoot.io/api/}
+  weather:
+    url: ${TRAVEL_WEATHER_URL:https://api.open-meteo.com/v1/forecast}
+  destination-search-url: ${TRAVEL_DESTINATION_SEARCH_URL:https://geocoding-api.open-meteo.com/v1/search}
+  routing:
+    driving-url: ${TRAVEL_ROUTING_DRIVING_URL:https://routing.openstreetmap.de/routed-car/route/v1/driving}
+    walking-url: ${TRAVEL_ROUTING_WALKING_URL:https://routing.openstreetmap.de/routed-foot/route/v1/driving}
+  ai:
+    base-url: ${TRAVEL_AI_BASE_URL:}
+    api-key: ${TRAVEL_AI_API_KEY:}
+    model: ${TRAVEL_AI_MODEL:}
+    protocol: ${TRAVEL_AI_PROTOCOL:chat-completions}
+    token-field: ${TRAVEL_AI_TOKEN_FIELD:max_tokens}
+    auth-mode: ${TRAVEL_AI_AUTH_MODE:api-key}
+    anthropic-version: ${TRAVEL_AI_ANTHROPIC_VERSION:2023-06-01}
+    max-tokens: ${TRAVEL_AI_MAX_TOKENS:6000}
+
+api:
+  security:
+    issuer: ${APP_OIDC_ISSUER:}
+    audience: ${APP_OIDC_AUDIENCE:wheretogo-api}
+    jwk-set-uri: ${API_OIDC_JWK_SET_URI:}
+    local-development: false
+    allow-any-authenticated-user: ${API_ALLOW_ANY_AUTHENTICATED_USER:false}
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:}
+    allowed-subjects: ${API_ALLOWED_SUBJECTS:}
+    max-request-bytes: ${API_MAX_REQUEST_BYTES:1048576}
+    requests-per-minute: ${API_REQUESTS_PER_MINUTE:120}
+    writes-per-minute: ${API_WRITES_PER_MINUTE:30}
+    peer-requests-per-minute: ${API_PEER_REQUESTS_PER_MINUTE:600}
+    webdav-requests-per-minute: ${API_WEBDAV_REQUESTS_PER_MINUTE:10}

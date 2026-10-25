@@ -7,12 +7,13 @@ import org.apache.ibatis.annotations.Param;
 
 @Mapper
 public interface TripMapper {
-    List<TripDto> findAll();
-    TripDto findById(@Param("id") UUID id);
-    int insert(@Param("id") UUID id, @Param("request") TripRequest request);
-    int update(@Param("id") UUID id, @Param("request") TripRequest request);
-    int countStopsOutsideRange(@Param("id") UUID id, @Param("request") TripRequest request);
-    int softDelete(@Param("id") UUID id);
-    void deleteStops(@Param("tripId") UUID tripId);
-    void insertStops(@Param("tripId") UUID tripId, @Param("stops") List<TripStopRequest> stops);
+    List<TripDto> findAll(@Param("userId") UUID userId);
+    TripDto findById(@Param("id") UUID id, @Param("userId") UUID userId);
+    int insert(@Param("id") UUID id, @Param("request") TripRequest request, @Param("userId") UUID userId);
+    int update(@Param("id") UUID id, @Param("request") TripRequest request, @Param("userId") UUID userId);
+    int countStopsOutsideRange(@Param("id") UUID id, @Param("request") TripRequest request, @Param("userId") UUID userId);
+    void shiftStops(@Param("id") UUID id, @Param("days") int days, @Param("userId") UUID userId);
+    int softDelete(@Param("id") UUID id, @Param("userId") UUID userId);
+    void deleteStops(@Param("tripId") UUID tripId, @Param("userId") UUID userId);
+    void insertStops(@Param("tripId") UUID tripId, @Param("stops") List<TripStopRequest> stops, @Param("userId") UUID userId);
 }

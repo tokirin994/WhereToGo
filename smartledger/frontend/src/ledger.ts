@@ -47,12 +47,17 @@ export interface Transaction {
   paidByParticipantId: string | null; splitParticipantIds: string[]; includeInStatistics: boolean
   splitMode?: 'equal' | 'ratio' | 'fixed'; splitRatio?: number | null; splitAmount?: number | null
   offsetSourceTransactionId?: string | null
+  offsetDateMode?: 'source' | 'independent'
   installmentStartMonth?: string | null
   ledgerSplitSettings?: Record<string, LedgerSplitSettings>
 }
 export type TransactionDraft = Partial<Transaction> & Pick<Transaction, 'title' | 'amount' | 'kind' | 'happenedAt'> & {
   hasExplicitBookSelection?: boolean
 }
+export type OffsetDateMode = 'source' | 'independent'
+export interface OffsetEdit {id:string;amount:number;categoryId:string|null;happenedAt:string;dateMode:OffsetDateMode}
+export interface OffsetDraft {id:string;categoryId:string|null;ratio:number;happenedAt:string;dateMode:OffsetDateMode}
+export interface OffsetPlan {existingAmount:number;newAmount:number;totalAmount:number;ratio:number;overLimit:boolean;additions:Array<{draft:OffsetDraft;amount:number}>}
 export interface Budget {
   id: string; name: string; limitAmount: number; periodType: 'monthly' | 'range'; year: number; month: number | null
   startDate: string | null; endDate: string | null; categoryIds: string[]; bookId: string | null
@@ -255,6 +260,7 @@ export function createTransaction(snapshot: LedgerSnapshot, draft: TransactionDr
     paidByParticipantId: primarySplit?.paidByParticipantId ?? draft.paidByParticipantId ?? null, splitParticipantIds: [...(primarySplit?.splitParticipantIds ?? draft.splitParticipantIds ?? [])],
     includeInStatistics: draft.includeInStatistics ?? true, splitMode: primarySplit?.splitMode ?? draft.splitMode ?? 'equal', splitRatio: primarySplit?.splitRatio ?? draft.splitRatio ?? null, splitAmount: primarySplit?.splitAmount ?? draft.splitAmount ?? null,
     offsetSourceTransactionId: draft.offsetSourceTransactionId ?? null,
+    ...(draft.offsetDateMode?{offsetDateMode:draft.offsetDateMode}:{}),
     installmentStartMonth: months > 1 ? baseDate : null,
     ledgerSplitSettings: structuredClone(ledgerSplitSettings),
   }))
@@ -271,11 +277,23 @@ export function updateTransaction(snapshot: LedgerSnapshot, id: string, draft: T
     installmentMonths: existing.installmentMonths, installmentOriginalTotal: existing.installmentOriginalTotal,
     installmentStartMonth: existing.installmentStartMonth,
   })
+  if(linkedOffsetSourceId(existing)&&!draft.offsetDateMode&&new Date(existing.happenedAt).getTime()!==new Date(rows[0].happenedAt).getTime())rows[0].offsetDateMode='independent'
   snapshot.transactions = snapshot.transactions.filter(tx => tx.id !== id).concat(rows).sort((a, b) => b.happenedAt.localeCompare(a.happenedAt))
-  for (const offset of snapshot.transactions.filter(tx => tx.offsetSourceTransactionId === id)) offset.bookIds = [...rows[0].bookIds]
+  synchronizeLinkedOffsets(snapshot,existing,rows[0])
   return rows
 }
 
+/** Original iOS snapshots may encode the relation only in source: offset:<id>|<original>. */
+export function linkedOffsetSourceId(tx: Pick<Transaction,'source'|'offsetSourceTransactionId'>):string|null {
+  if(tx.offsetSourceTransactionId)return String(tx.offsetSourceTransactionId)
+  if(!tx.source?.startsWith('offset:'))return null
+  return tx.source.slice(7).split('|',1)[0]?.trim()||null
+}
+export function deleteTransactionRecords(snapshot:LedgerSnapshot,transactionId:string){
+  if(!snapshot.transactions.some(tx=>tx.id===transactionId))throw new Error('未找到要删除的流水')
+  // Like the native app, deleting a period removes that period and its generated offsets only.
+  snapshot.transactions=snapshot.transactions.filter(tx=>tx.id!==transactionId&&linkedOffsetSourceId(tx)!==transactionId)
+}
 const installmentBaseTitle = (title: string) => title.replace(/\s*[（(]分期\s*\d+\s*\/\s*\d+[）)]\s*$/, '').trim()
 export function cancelInstallment(snapshot: LedgerSnapshot, transactionId: string): Transaction {
   const current = snapshot.transactions.find(tx => tx.id === transactionId)
@@ -286,7 +304,17 @@ export function cancelInstallment(snapshot: LedgerSnapshot, transactionId: strin
   const merged: Transaction = { ...group[0], title: installmentBaseTitle(group[0].title), amount: group.reduce((sum, tx) => sum + Math.round(tx.amount * 100), 0) / 100,
     happenedAt: group.map(tx => tx.happenedAt).sort()[0], installmentGroupId: null, installmentIndex: null, installmentMonths: null, installmentOriginalTotal: null, installmentStartMonth: null }
   const remaining = snapshot.transactions.filter(tx => !ids.has(tx.id))
-  for (const tx of remaining) if (tx.offsetSourceTransactionId && ids.has(tx.offsetSourceTransactionId)) tx.offsetSourceTransactionId = merged.id
+  for (const tx of remaining) {
+    const sourceId=linkedOffsetSourceId(tx)
+    if(sourceId&&ids.has(sourceId)&&sourceId!==merged.id){
+      const previous=group.find(row=>row.id===sourceId)!
+      tx.offsetDateMode=offsetDateMode(tx,previous)
+      if(tx.offsetDateMode==='source')tx.happenedAt=merged.happenedAt
+      tx.offsetSourceTransactionId=merged.id
+      // Native offsetSourceMarker preserves the previous source after the separator.
+      tx.source=`offset:${merged.id}|${tx.source}`
+    }
+  }
   snapshot.transactions = [...remaining, merged].sort((a, b) => b.happenedAt.localeCompare(a.happenedAt))
   return merged
 }
@@ -303,21 +331,85 @@ export function payOffInstallment(snapshot: LedgerSnapshot, transactionId: strin
   const payoff: Transaction = { ...current, id: crypto.randomUUID(), title: `${installmentBaseTitle(current.title)}（立即还清）`, amount: cents / 100,
     happenedAt: now.toISOString(), source: marker, note: [current.note, '分期立即还清'].filter(Boolean).join(' · '),
     installmentGroupId: null, installmentIndex: null, installmentMonths: null, installmentOriginalTotal: null, installmentStartMonth: null, offsetSourceTransactionId: null }
-  snapshot.transactions = [...snapshot.transactions.filter(tx => !ids.has(tx.id) && !ids.has(tx.offsetSourceTransactionId || '')), payoff].sort((a, b) => b.happenedAt.localeCompare(a.happenedAt))
+  snapshot.transactions = [...snapshot.transactions.filter(tx => !ids.has(tx.id) && !ids.has(linkedOffsetSourceId(tx) || '')), payoff].sort((a, b) => b.happenedAt.localeCompare(a.happenedAt))
   return payoff
 }
 
-export function createOffsetTransaction(source: Transaction, category: Category, ratio: number, id: string = crypto.randomUUID()): Transaction {
-  if (source.kind !== 'expense' || category.flowType !== 'income' || !Number.isFinite(ratio) || ratio <= 0 || ratio > 100) throw new Error('抵扣收入需关联支出、收入分类和有效比例')
+export function createOffsetTransaction(source: Transaction, category: Category, ratio: number, id: string = crypto.randomUUID(), options:{happenedAt?:string;dateMode?:OffsetDateMode;amount?:number}={}): Transaction {
+  if (source.kind !== 'expense' || category.flowType !== 'income' || !Number.isFinite(ratio) || ratio <= 0 || ratio > 200) throw new Error('抵扣收入需关联支出、收入分类及 0–200% 的有效比例')
+  const amount=options.amount??Math.round((source.installmentOriginalTotal ?? source.amount) * ratio) / 100
+  const happenedAt=options.happenedAt||source.happenedAt
+  if(!Number.isFinite(amount)||amount<=0||!Number.isFinite(new Date(happenedAt).getTime()))throw new Error('抵扣金额或时间无效')
   return {
-    id, title: `抵扣 · ${source.title}`, amount: Math.round((source.installmentOriginalTotal ?? source.amount) * ratio) / 100,
-    kind: 'income', happenedAt: source.happenedAt, note: '关联支出抵扣/报销', merchant: source.merchant,
-    paymentMethod: source.paymentMethod, source: 'offset', currency: source.currency, categoryId: category.id,
+    id, title: installmentBaseTitle(source.title), amount,
+    kind: 'income', happenedAt, note: source.note||'抵扣流水', merchant: source.merchant,
+    paymentMethod: source.paymentMethod, source: `offset:${source.id}|${source.source}`, currency: source.currency, categoryId: category.id,
     bookIds: [...source.bookIds], installmentGroupId: null, installmentIndex: null, installmentMonths: null,
-    installmentOriginalTotal: null, originalAmount: null, discountAmount: null, premiumAmount: null,
-    paidByParticipantId: source.paidByParticipantId, splitParticipantIds: [], includeInStatistics: true,
+    installmentOriginalTotal: null, installmentStartMonth: null, originalAmount: null, discountAmount: null, premiumAmount: null,
+    paidByParticipantId: source.paidByParticipantId, splitParticipantIds: [...source.splitParticipantIds], includeInStatistics: true,
+    splitMode:source.splitMode,splitRatio:source.splitRatio,splitAmount:source.splitAmount,
     offsetSourceTransactionId: source.id,
+    offsetDateMode:options.dateMode||'source',
+    ledgerSplitSettings:JSON.parse(JSON.stringify(source.ledgerSplitSettings||{})),
   }
+}
+
+export function linkedOffsets(snapshot:LedgerSnapshot,sourceId:string){return snapshot.transactions.filter(tx=>tx.id!==sourceId&&linkedOffsetSourceId(tx)===sourceId)}
+export function offsetDateMode(offset:Transaction,source:Transaction):OffsetDateMode {
+  if(offset.offsetDateMode==='source'||offset.offsetDateMode==='independent')return offset.offsetDateMode
+  return new Date(offset.happenedAt).getTime()===new Date(source.happenedAt).getTime()?'source':'independent'
+}
+export function offsetEdit(offset:Transaction,source:Transaction):OffsetEdit{return {id:offset.id,amount:offset.amount,categoryId:offset.categoryId,happenedAt:offset.happenedAt,dateMode:offsetDateMode(offset,source)}}
+function synchronizeLinkedOffsets(snapshot:LedgerSnapshot,previous:Transaction,source:Transaction){
+  const dateChanged=new Date(previous.happenedAt).getTime()!==new Date(source.happenedAt).getTime()
+  for(const offset of linkedOffsets(snapshot,source.id)){
+    if(offset.kind!=='income')continue
+    const mode=offsetDateMode(offset,previous)
+    Object.assign(offset,{title:source.title,note:source.note||'抵扣流水',merchant:source.merchant,paymentMethod:source.paymentMethod,
+      bookIds:[...source.bookIds],paidByParticipantId:source.paidByParticipantId,splitParticipantIds:[...source.splitParticipantIds],
+      ledgerSplitSettings:JSON.parse(JSON.stringify(source.ledgerSplitSettings||{})),offsetSourceTransactionId:source.id,source:`offset:${source.id}|${source.source}`,
+      offsetDateMode:mode,...(mode==='source'&&dateChanged?{happenedAt:source.happenedAt}:{}),
+      installmentGroupId:null,installmentIndex:null,installmentMonths:null,installmentOriginalTotal:null,installmentStartMonth:null})
+  }
+}
+export function planOffsets(snapshot:LedgerSnapshot,source:Transaction,edits:OffsetEdit[],drafts:OffsetDraft[],baseAmount=source.amount,normalize=false):OffsetPlan {
+  if(source.kind!=='expense'&&(edits.length||drafts.length))throw new Error('抵扣只能关联支出流水')
+  if(!Number.isFinite(baseAmount)||baseAmount<=0)throw new Error('请先填写有效支出金额')
+  const baseCents=Math.round(baseAmount*100)
+  if(baseCents<1)throw new Error('支出金额至少为 0.01 元')
+  const validCategory=(id:string|null)=>snapshot.categories.some(category=>category.id===id&&category.flowType==='income')
+  const owned=new Set(linkedOffsets(snapshot,source.id).map(tx=>tx.id)),seen=new Set<string>()
+  let existingCents=0
+  for(const edit of edits){
+    if(!owned.has(edit.id)||seen.has(edit.id))throw new Error('已有抵扣记录发生变化，请重新打开编辑')
+    seen.add(edit.id)
+    if(!validCategory(edit.categoryId)||!Number.isFinite(edit.amount)||Math.round(edit.amount*100)<1||!['source','independent'].includes(edit.dateMode)||!Number.isFinite(new Date(edit.happenedAt).getTime()))throw new Error('请核对已有抵扣的金额、收入分类和日期')
+    existingCents+=Math.round(edit.amount*100)
+  }
+  const additions=drafts.map(draft=>{
+    if(!validCategory(draft.categoryId)||!Number.isFinite(draft.ratio)||draft.ratio<0||draft.ratio>200||!['source','independent'].includes(draft.dateMode)||!Number.isFinite(new Date(draft.happenedAt).getTime()))throw new Error('请核对新增抵扣分类、日期和 0–200% 的比例')
+    return {draft,amount:Math.round(baseCents*draft.ratio/100)/100}
+  })
+  const desired=additions.map(row=>Math.round(row.amount*100)),desiredTotal=desired.reduce((a,b)=>a+b,0)
+  const available=Math.max(0,baseCents-existingCents)
+  if(normalize&&desiredTotal>available){
+    const allocated=desired.map(cents=>Math.floor(available*cents/desiredTotal))
+    let rest=available-allocated.reduce((a,b)=>a+b,0)
+    const order=desired.map((cents,index)=>({index,fraction:available*cents/desiredTotal-allocated[index]})).sort((a,b)=>b.fraction-a.fraction||a.index-b.index)
+    for(const item of order){if(rest<=0)break;allocated[item.index]++;rest--}
+    additions.forEach((row,index)=>{row.amount=allocated[index]/100})
+  }
+  const newCents=additions.reduce((sum,row)=>sum+Math.round(row.amount*100),0),total=existingCents+newCents
+  return {existingAmount:existingCents/100,newAmount:newCents/100,totalAmount:total/100,ratio:total/baseCents*100,overLimit:total>baseCents,additions}
+}
+export function applyOffsetChanges(snapshot:LedgerSnapshot,source:Transaction,edits:OffsetEdit[],drafts:OffsetDraft[],baseAmount=source.amount,normalize=false){
+  const plan=planOffsets(snapshot,source,edits,drafts,baseAmount,normalize),keep=new Set(edits.map(edit=>edit.id))
+  const remove=new Set(linkedOffsets(snapshot,source.id).filter(tx=>!keep.has(tx.id)).map(tx=>tx.id))
+  snapshot.transactions=snapshot.transactions.filter(tx=>!remove.has(tx.id)&&!remove.has(linkedOffsetSourceId(tx)||''))
+  for(const edit of edits){const row=snapshot.transactions.find(tx=>tx.id===edit.id)!;Object.assign(row,{amount:Math.round(edit.amount*100)/100,categoryId:edit.categoryId,offsetDateMode:edit.dateMode,happenedAt:edit.dateMode==='source'?source.happenedAt:new Date(edit.happenedAt).toISOString()})}
+  for(const item of plan.additions){if(item.amount<0.01)continue;const category=snapshot.categories.find(c=>c.id===item.draft.categoryId)!;snapshot.transactions.push(createOffsetTransaction(source,category,item.draft.ratio,undefined,{amount:item.amount,dateMode:item.draft.dateMode,happenedAt:item.draft.dateMode==='source'?source.happenedAt:new Date(item.draft.happenedAt).toISOString()}))}
+  snapshot.transactions.sort((a,b)=>b.happenedAt.localeCompare(a.happenedAt))
+  return plan
 }
 
 export function linkedOffsetRatio(source: Transaction, offset: Transaction): number {

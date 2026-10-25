@@ -10,6 +10,9 @@ import { usePlacesStore, type PlaceCategory } from './stores/places'
 import { useTripsStore, type Trip } from './stores/trips'
 import type { TripStopInput } from './api/trips'
 import { openTripLedgerEntry } from './api/ledgerIntegration'
+import AppSwitcher from './AppSwitcher.vue'
+import { smartLedgerUrl } from './appLinks'
+import { signOut } from './auth'
 
 const store = usePlacesStore()
 const tripsStore = useTripsStore()
@@ -297,18 +300,20 @@ async function saveMemo() {
 <template>
   <div class="app-shell" :class="{ 'theme-dark': darkMode }">
     <header class="topbar">
-      <a class="brand" href="#" aria-label="TravelAtlas 首页" @click.prevent="navTo('地图')">
+      <a class="brand" href="#" aria-label="WhereToGo 旅行工作区" @click.prevent="navTo('地图')">
         <span class="brand-mark"><Compass :size="20" :stroke-width="1.8" /></span>
-        <span class="brand-name">travel<span>atlas</span></span>
+        <span class="brand-name">Where<span>ToGo</span></span>
       </a>
       <nav class="main-nav" aria-label="主导航">
         <button v-for="item in ['地图', '我的地点', '我的行程', '地点合集', '备忘录']" :key="item"
           class="nav-link" :class="{ active: activeNav === item }" @click="navTo(item)">{{ item }}</button>
       </nav>
       <div class="top-actions">
+        <a class="travel-ledger-shortcut" :href="smartLedgerUrl" aria-label="打开 SmartLedger 记账"><span>记账</span><ArrowRight :size="14"/></a>
+        <AppSwitcher current="travel"/>
         <div class="global-search"><Search :size="16" /><input v-model="query" aria-label="搜索地点" placeholder="搜索地点、城市或标签" /><kbd>⌘ K</kbd></div>
         <button class="icon-button theme-toggle" :aria-label="darkMode ? '切换浅色模式' : '切换深色模式'" @click="darkMode = !darkMode"><Sun v-if="darkMode" :size="18" /><Moon v-else :size="18" /></button>
-        <button class="avatar-button" aria-label="打开个人菜单">L</button>
+        <button class="avatar-button" aria-label="退出当前旅行账号" title="退出当前账号" @click="signOut">退出</button>
       </div>
     </header>
 

@@ -1,0 +1,7 @@
+# Explicit opt-in for the loopback development identity provider only.
+api:
+  security:
+    local-development: true
+    issuer: http://localhost:8091/realms/local
+    audience: smartledger-api
+    allowed-origins: http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174

@@ -7,9 +7,9 @@ import { applyImportDefaults } from './importDefaults'
 import { downloadBookExport, type BookExportFormat } from './bookExport'
 import { createImportSource, type ImportSource } from './importSources'
 import { chooseLocalAfterConflict, chooseRemoteAfterConflict, fingerprint, getRemoteSnapshot, pushSnapshot, smartSync, type SyncConflict } from './cloudSync'
-import { applyAutoCollectRules, linkedOffsetRatio, cancelInstallment, payOffInstallment, updateTransaction, localDay, budgetSpent, categoryIcon, categoryPath, createInitialSnapshot, createOffsetTransaction, createTransaction, flattenCategories, normalizeSnapshot, rangeForPreset, type LedgerSplitSettings, type Book, type Budget, type Category, type FlowType, type LedgerSnapshot, type Transaction } from './ledger'
+import { applyAutoCollectRules, linkedOffsets, offsetEdit, offsetDateMode, planOffsets, applyOffsetChanges, linkedOffsetSourceId, deleteTransactionRecords, cancelInstallment, payOffInstallment, updateTransaction, localDay, budgetSpent, categoryIcon, categoryPath, createInitialSnapshot, createOffsetTransaction, createTransaction, flattenCategories, normalizeSnapshot, rangeForPreset, type LedgerSplitSettings, type Book, type Budget, type Category, type FlowType, type LedgerSnapshot, type Transaction, type OffsetEdit, type OffsetDraft, type OffsetDateMode } from './ledger'
 import { readLocalSnapshot, readSyncMetadata, writeLocalSnapshot, writeSyncMetadata } from './storage'
-import { backupToNutstore, clearNutstoreCredentials, readNutstoreCredentials, restoreFromNutstore, testNutstore, writeNutstoreCredentials, type NutstoreCredentials } from './nutstoreSync'
+import { backupToNutstore, clearNutstoreCredentials, deleteNutstoreCredentials, getNutstoreStatus, readNutstoreCredentials, restoreFromNutstore, testNutstore, writeNutstoreCredentials, type NutstoreCredentials, type NutstoreStatus } from './nutstoreSync'
 import CategoryPicker from './CategoryPicker.vue'
 import CategoryManager from './CategoryManager.vue'
 import BookLibrary from './BookLibrary.vue'
@@ -20,11 +20,16 @@ import UiIcon from './UiIcon.vue'
 import CategoryIcon from './CategoryIcon.vue'
 import BookAssignmentPicker from './BookAssignmentPicker.vue'
 import InstallmentControls from './InstallmentControls.vue'
+import OffsetManager from './OffsetManager.vue'
 import OverviewDashboard from './OverviewDashboard.vue'
 import OcrImportWorkbench from './OcrImportWorkbench.vue'
 import OcrCandidateEditor from './OcrCandidateEditor.vue'
 import ImportSourcePreview from './ImportSourcePreview.vue'
 import PaymentChannelSettings from './PaymentChannelSettings.vue'
+import AppSwitcher from './AppSwitcher.vue'
+import ApiSecurityPanel from './ApiSecurityPanel.vue'
+import { portalUrl, travelUrl } from './appLinks'
+import { authorizedRequest } from './apiClient'
 import { defaultTransactionFilters, type TransactionFilters } from './ledgerViewModels'
 
 const props = defineProps<{ user: User; apiUrl: string; accountKey: string; bookId: string | null }>()
@@ -43,6 +48,7 @@ const syncConflict = ref<SyncConflict | null>(null)
 const cloudRevision = ref(0)
 const syncMessage = ref('')
 const nutstoreCredentials = ref<NutstoreCredentials>(readNutstoreCredentials(props.accountKey))
+const nutstoreStatus = ref<NutstoreStatus>({available:false,configured:false})
 const nutstoreMessage = ref('')
 let periodicSyncTimer: number | undefined
 let midnightSyncTimer: number | undefined
@@ -59,8 +65,17 @@ const entryInstallmentStartDate = ref(localDay(new Date()))
 const entryExplicitBooks = ref(false)
 const entrySplitSettings = ref<Record<string, LedgerSplitSettings>>({})
 const editingTransaction = computed(() => snapshot.value.transactions.find(tx => tx.id === editingId.value))
-const entryEditorState = () => JSON.stringify({ draft:entryDraft.value, installment:entryInstallmentEnabled.value, start:entryInstallmentStartDate.value, explicit:entryExplicitBooks.value, splits:entrySplitSettings.value })
-const entryDraft = ref({ title: '', amount: '', kind: 'expense' as FlowType, happenedAt: new Date().toISOString().slice(0, 16), categoryId: '', bookIds: [] as string[], paymentMethod: '', merchant: '', note: '', installmentMonths: '1', originalAmount: '', discountAmount: '', premiumAmount: '', payer: '', splitParticipantIds: [] as string[], splitMode: 'equal' as 'equal'|'ratio'|'fixed', splitRatio: '50', splitAmount: '', offsetEnabled: false, offsetCategoryId: '', offsetRatio: '100' })
+const entryOffsetEdits = ref<OffsetEdit[]>([])
+const entryOffsetDrafts = ref<OffsetDraft[]>([])
+const entryClearOffsetIds = ref<string[]>([])
+const entryOffsetManager = ref<InstanceType<typeof OffsetManager>|null>(null)
+const entryOffsetDateMode = ref<OffsetDateMode>('source')
+const entryOffsetOriginalState = ref('')
+const entryExistingOffsets = computed(()=>editingId.value?linkedOffsets(snapshot.value,editingId.value):[])
+const entryRecordState = () => JSON.stringify({source:editingTransaction.value,offsets:[...entryExistingOffsets.value].sort((a,b)=>a.id.localeCompare(b.id))})
+const entryLinkedSource = computed(()=>{const id=editingTransaction.value&&linkedOffsetSourceId(editingTransaction.value);return snapshot.value.transactions.find(tx=>tx.id===id)})
+const entryEditorState = () => JSON.stringify({ draft:entryDraft.value, installment:entryInstallmentEnabled.value, start:entryInstallmentStartDate.value, explicit:entryExplicitBooks.value, splits:entrySplitSettings.value, offsetEdits:entryOffsetEdits.value, offsetDrafts:entryOffsetDrafts.value, offsetDateMode:entryOffsetDateMode.value })
+const entryDraft = ref({ title: '', amount: '', kind: 'expense' as FlowType, happenedAt: new Date().toISOString().slice(0, 16), categoryId: '', bookIds: [] as string[], paymentMethod: '', merchant: '', note: '', installmentMonths: '1', originalAmount: '', discountAmount: '', premiumAmount: '', payer: '', splitParticipantIds: [] as string[], splitMode: 'equal' as 'equal'|'ratio'|'fixed', splitRatio: '50', splitAmount: '', offsetEnabled: false })
 const bookOpen = ref(false)
 const editingBookId = ref<string | null>(null)
 const bookRuleMode = ref<'all'|'expense'|'income'|'categories'>('all')
@@ -147,6 +162,14 @@ async function savePaymentChannels(channels: string[]) {
 
 async function bootstrap() {
   loading.value=true; error.value=''
+  try{
+    nutstoreStatus.value=await getNutstoreStatus(props.apiUrl,props.user.access_token)
+    if(nutstoreCredentials.value.username&&nutstoreCredentials.value.appPassword&&nutstoreStatus.value.available){
+      if(!nutstoreStatus.value.configured||nutstoreStatus.value.needsUpdate)nutstoreStatus.value=await writeNutstoreCredentials(props.apiUrl,props.user.access_token,nutstoreCredentials.value)
+      clearNutstoreCredentials(props.accountKey);nutstoreCredentials.value={username:'',appPassword:''}
+      nutstoreMessage.value='旧版浏览器凭证已迁入服务器加密存储，本机明文配置已清除'
+    }
+  }catch(cause){nutstoreMessage.value=cause instanceof Error?cause.message:'读取加密凭证配置失败'}
   try {
     const local = await readLocalSnapshot(props.accountKey)
     if (local) snapshot.value=normalizeSnapshot(local)
@@ -157,7 +180,7 @@ async function bootstrap() {
       if(remote.snapshot)writeSyncMetadata(props.accountKey,{revision:remote.revision,lastFingerprint:fingerprint(snapshot.value),lastSyncedAt:remote.updatedAt})
       if (!remote.snapshot) await writeLocalSnapshot(props.accountKey,snapshot.value)
     }
-    const response=await fetch(`${props.apiUrl}/api/v1/books`,{headers:{Authorization:`Bearer ${props.user.access_token}`}})
+    const response=await authorizedRequest(props.apiUrl,props.user.access_token,'/api/v1/books')
     if (response.ok) {
       const remoteBooks=await response.json() as Array<{id:string;name:string;type:string;destination?:string;expenses?:number}>
       for (const remote of remoteBooks) if (!snapshot.value.books.some(book=>book.id===remote.id)) snapshot.value.books.push({
@@ -165,7 +188,7 @@ async function bootstrap() {
       })
     }
     if (props.bookId) {
-      const response=await fetch(`${props.apiUrl}/api/v1/books/${props.bookId}`,{headers:{Authorization:`Bearer ${props.user.access_token}`}})
+      const response=await authorizedRequest(props.apiUrl,props.user.access_token,`/api/v1/books/${props.bookId}`)
       if (response.ok) {
         const remote=await response.json() as {id:string;name:string;tripName?:string;destination?:string;startsOn?:string;endsOn?:string}
         let book=snapshot.value.books.find(item=>item.id===remote.id)
@@ -213,17 +236,21 @@ async function resolveSyncConflict(useLocal:boolean) {
 async function pushLocalNow(){busy.value=true;try{const remote=await pushSnapshot(props.apiUrl,props.user.access_token,props.accountKey,snapshot.value,readSyncMetadata(props.accountKey).revision);cloudRevision.value=remote.revision;syncMessage.value=`本地已推送 · revision ${remote.revision}`;notify('已推送到云端')}catch(cause){syncMessage.value=cause instanceof Error?cause.message:'推送失败';notify(syncMessage.value)}finally{busy.value=false}}
 async function pullRemoteNow(){if(!window.confirm('采用云端快照会替换当前本地账本，确认继续？'))return;busy.value=true;try{const remote=await getRemoteSnapshot(props.apiUrl,props.user.access_token);if(!remote.snapshot)throw new Error('云端还没有账本快照');snapshot.value=normalizeSnapshot(remote.snapshot);writeSyncMetadata(props.accountKey,{revision:remote.revision,lastFingerprint:fingerprint(snapshot.value),lastSyncedAt:remote.updatedAt});await writeLocalSnapshot(props.accountKey,snapshot.value);syncMessage.value=`已从云端拉取 · revision ${remote.revision}`;notify('已从云端拉取')}catch(cause){syncMessage.value=cause instanceof Error?cause.message:'拉取失败';notify(syncMessage.value)}finally{busy.value=false}}
 
-function saveNutstoreConfig(){
-  if(!nutstoreCredentials.value.username.trim()||!nutstoreCredentials.value.appPassword.trim()){nutstoreMessage.value='请填写坚果云账号邮箱和第三方应用密码';return false}
-  nutstoreCredentials.value={username:nutstoreCredentials.value.username.trim(),appPassword:nutstoreCredentials.value.appPassword.replace(/\s+/g,'')}
-  writeNutstoreCredentials(props.accountKey,nutstoreCredentials.value)
-  nutstoreMessage.value='配置已保存在本机浏览器，不会写入账本快照或 SmartLedger 云端'
-  return true
+async function saveNutstoreConfig(){
+  if(!nutstoreStatus.value.available)throw new Error('服务器尚未配置凭证加密密钥，请联系管理员')
+  if(nutstoreStatus.value.needsUpdate&&!nutstoreCredentials.value.appPassword)throw new Error('已有凭证无法解密，请恢复原密钥或重新填写配置')
+  const pending=nutstoreCredentials.value
+  if(!pending.username&&!pending.appPassword&&nutstoreStatus.value.configured)return
+  if(!pending.username.trim()||!pending.appPassword.trim())throw new Error('更新配置时请填写完整的坚果云账号邮箱和第三方应用密码')
+  nutstoreStatus.value=await writeNutstoreCredentials(props.apiUrl,props.user.access_token,{username:pending.username.trim(),appPassword:pending.appPassword.replace(/\s+/g,'')})
+  clearNutstoreCredentials(props.accountKey);nutstoreCredentials.value={username:'',appPassword:''}
+  nutstoreMessage.value='账号和应用密码已加密保存到服务器，浏览器不再保存密码'
 }
-async function testNutstoreConnection(){if(!saveNutstoreConfig())return;busy.value=true;try{nutstoreMessage.value=await testNutstore(props.apiUrl,props.user.access_token,nutstoreCredentials.value)}catch(cause){nutstoreMessage.value=cause instanceof Error?cause.message:'坚果云连接失败'}finally{busy.value=false}}
-async function backupNutstore(){if(!saveNutstoreConfig())return;busy.value=true;try{nutstoreMessage.value=await backupToNutstore(props.apiUrl,props.user.access_token,nutstoreCredentials.value,snapshot.value)}catch(cause){nutstoreMessage.value=cause instanceof Error?cause.message:'坚果云备份失败'}finally{busy.value=false}}
-async function restoreNutstore(){if(!saveNutstoreConfig())return;if(!window.confirm('从坚果云恢复会替换当前本机账本，建议先备份当前数据。继续吗？'))return;busy.value=true;try{const restored=normalizeSnapshot(await restoreFromNutstore(props.apiUrl,props.user.access_token,nutstoreCredentials.value));restored.updatedAt=new Date().toISOString();snapshot.value=restored;await writeLocalSnapshot(props.accountKey,restored);nutstoreMessage.value='已从坚果云恢复到本机';notify(nutstoreMessage.value)}catch(cause){nutstoreMessage.value=cause instanceof Error?cause.message:'坚果云恢复失败'}finally{busy.value=false}}
-function removeNutstoreConfig(){clearNutstoreCredentials(props.accountKey);nutstoreCredentials.value={username:'',appPassword:''};nutstoreMessage.value='已清除本机保存的坚果云配置'}
+async function testNutstoreConnection(){busy.value=true;try{await saveNutstoreConfig();nutstoreMessage.value=await testNutstore(props.apiUrl,props.user.access_token)}catch(cause){nutstoreMessage.value=cause instanceof Error?cause.message:'坚果云连接失败'}finally{busy.value=false}}
+async function saveNutstoreOnly(){busy.value=true;try{await saveNutstoreConfig()}catch(cause){nutstoreMessage.value=cause instanceof Error?cause.message:'保存配置失败'}finally{busy.value=false}}
+async function backupNutstore(){busy.value=true;try{await saveNutstoreConfig();nutstoreMessage.value=await backupToNutstore(props.apiUrl,props.user.access_token,snapshot.value)}catch(cause){nutstoreMessage.value=cause instanceof Error?cause.message:'坚果云备份失败'}finally{busy.value=false}}
+async function restoreNutstore(){if(!window.confirm('从坚果云恢复会替换当前本机账本，建议先备份当前数据。继续吗？'))return;busy.value=true;try{await saveNutstoreConfig();const restored=normalizeSnapshot(await restoreFromNutstore(props.apiUrl,props.user.access_token));restored.updatedAt=new Date().toISOString();snapshot.value=restored;await writeLocalSnapshot(props.accountKey,restored);nutstoreMessage.value='已从坚果云恢复到本机';notify(nutstoreMessage.value)}catch(cause){nutstoreMessage.value=cause instanceof Error?cause.message:'坚果云恢复失败'}finally{busy.value=false}}
+async function removeNutstoreConfig(){busy.value=true;try{nutstoreStatus.value=await deleteNutstoreCredentials(props.apiUrl,props.user.access_token);clearNutstoreCredentials(props.accountKey);nutstoreCredentials.value={username:'',appPassword:''};nutstoreMessage.value='已删除服务器加密凭证及本机旧配置'}catch(cause){nutstoreMessage.value=cause instanceof Error?cause.message:'清除配置失败'}finally{busy.value=false}}
 
 function toLocalDateTime(value?:string){if(!value)return '';const date=new Date(value);if(Number.isNaN(date.getTime()))return '';const pad=(n:number)=>String(n).padStart(2,'0');return `${localDay(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}`}
 function openEntry(transaction?:Transaction) {
@@ -231,42 +258,83 @@ function openEntry(transaction?:Transaction) {
   if(entryOpen.value&&entryBaseline.value!==entryEditorState()&&!window.confirm('当前流水尚未保存，放弃修改并继续吗？'))return
   if(activeTab.value!=='entry')entryReturnTab.value=activeTab.value
   editingId.value=transaction?.id||null
-  const linkedOffset=transaction?snapshot.value.transactions.find(row=>row.offsetSourceTransactionId===transaction.id):undefined
-  const reimbursement=flatCategories.value.find(item=>item.flowType==='income'&&item.name==='报销')
+  const hasOffsets=transaction?linkedOffsets(snapshot.value,transaction.id).length>0:false
   const entryBook=selectedBook.value||(activeTab.value==='transactions'&&transactionFilters.value.bookId?snapshot.value.books.find(book=>book.id===transactionFilters.value.bookId):null)
   const newKind=activeTab.value==='transactions'&&transactionFilters.value.flow==='income'?'income':'expense'
   const newTime=toLocalDateTime(new Date().toISOString())
-  entryDraft.value=transaction?{title:transaction.title,amount:String(transaction.amount),kind:transaction.kind,happenedAt:toLocalDateTime(transaction.happenedAt),categoryId:transaction.categoryId||'',bookIds:[...transaction.bookIds],paymentMethod:transaction.paymentMethod,merchant:transaction.merchant,note:transaction.note,installmentMonths:String(transaction.installmentMonths||1),originalAmount:transaction.originalAmount?String(transaction.originalAmount):'',discountAmount:transaction.discountAmount?String(transaction.discountAmount):'',premiumAmount:transaction.premiumAmount?String(transaction.premiumAmount):'',payer:transaction.paidByParticipantId||'我',splitParticipantIds:[...transaction.splitParticipantIds],splitMode:transaction.splitMode||'equal',splitRatio:String(transaction.splitRatio??50),splitAmount:transaction.splitAmount==null?'':String(transaction.splitAmount),offsetEnabled:Boolean(linkedOffset),offsetCategoryId:linkedOffset?.categoryId||reimbursement?.id||'',offsetRatio:linkedOffset?String(linkedOffsetRatio(transaction,linkedOffset)):'100'}:{title:'',amount:'',kind:newKind,happenedAt:newTime,categoryId:'',bookIds:entryBook?[entryBook.id]:[],paymentMethod:'',merchant:'',note:'',installmentMonths:'1',originalAmount:'',discountAmount:'',premiumAmount:'',payer:'我',splitParticipantIds:entryBook?.participants.length?[entryBook.participants[0].id]:[],splitMode:'equal',splitRatio:'50',splitAmount:'',offsetEnabled:false,offsetCategoryId:reimbursement?.id||'',offsetRatio:'100'}
+  entryDraft.value=transaction?{title:transaction.title,amount:String(transaction.amount),kind:transaction.kind,happenedAt:toLocalDateTime(transaction.happenedAt),categoryId:transaction.categoryId||'',bookIds:[...transaction.bookIds],paymentMethod:transaction.paymentMethod,merchant:transaction.merchant,note:transaction.note,installmentMonths:String(transaction.installmentMonths||1),originalAmount:transaction.originalAmount?String(transaction.originalAmount):'',discountAmount:transaction.discountAmount?String(transaction.discountAmount):'',premiumAmount:transaction.premiumAmount?String(transaction.premiumAmount):'',payer:transaction.paidByParticipantId||'我',splitParticipantIds:[...transaction.splitParticipantIds],splitMode:transaction.splitMode||'equal',splitRatio:String(transaction.splitRatio??50),splitAmount:transaction.splitAmount==null?'':String(transaction.splitAmount),offsetEnabled:hasOffsets}:{title:'',amount:'',kind:newKind,happenedAt:newTime,categoryId:'',bookIds:entryBook?[entryBook.id]:[],paymentMethod:'',merchant:'',note:'',installmentMonths:'1',originalAmount:'',discountAmount:'',premiumAmount:'',payer:'我',splitParticipantIds:entryBook?.participants.length?[entryBook.participants[0].id]:[],splitMode:'equal',splitRatio:'50',splitAmount:'',offsetEnabled:false}
   entryExplicitBooks.value=Boolean(transaction||entryBook)
   entrySplitSettings.value=JSON.parse(JSON.stringify(transaction?.ledgerSplitSettings||{}))
   entryInstallmentEnabled.value=Boolean(transaction?.installmentGroupId)
   entryInstallmentStartDate.value=localDay(transaction?.installmentStartMonth||transaction?.happenedAt||new Date())
+  entryOffsetEdits.value=transaction?linkedOffsets(snapshot.value,transaction.id).map(row=>offsetEdit(row,transaction)):[]
+  entryOffsetDrafts.value=[];entryClearOffsetIds.value=[]
+  entryOffsetDateMode.value=transaction&&entryLinkedSource.value?offsetDateMode(transaction,entryLinkedSource.value):'source'
+  entryOffsetOriginalState.value=entryRecordState()
   entryBaseline.value=entryEditorState()
   entryOpen.value=true;activeTab.value='entry'
 }
 function cancelEntry(){if(savingEntry.value)return;if(entryBaseline.value!==entryEditorState()&&!window.confirm('当前流水尚未保存，确定放弃吗？'))return;entryOpen.value=false;activeTab.value=entryReturnTab.value}
+function setEntryOffsetsEnabled(enabled:boolean){entryDraft.value.offsetEnabled=enabled;if(enabled&&editingTransaction.value){entryOffsetEdits.value=entryExistingOffsets.value.map(row=>offsetEdit(row,editingTransaction.value!));entryClearOffsetIds.value=[]}}
+function setEntryOffsetDateFollow(event:Event){const follow=(event.target as HTMLInputElement).checked;entryOffsetDateMode.value=follow?'source':'independent';if(follow&&entryLinkedSource.value)entryDraft.value.happenedAt=toLocalDateTime(entryLinkedSource.value.happenedAt)}
 async function saveEntry() {
   if(savingEntry.value)return
   savingEntry.value=true;error.value=''
   let previousTransactions:Transaction[]|null=null
+  let previousChannels:string[]|null=null
   try {
+    if(editingId.value&&entryOffsetOriginalState.value!==entryRecordState())throw new Error('这笔流水或关联抵扣已更新，请重新打开编辑后再保存')
     const category=snapshot.value.categories.find(item=>item.id===entryDraft.value.categoryId)
     if(category&&category.flowType!==entryDraft.value.kind)throw new Error('分类类型与收支方向不一致')
     if(entryDraft.value.splitMode==='ratio'&&(Number(entryDraft.value.splitRatio)<0||Number(entryDraft.value.splitRatio)>100))throw new Error('本人分摊比例应为 0 至 100')
     if(entryDraft.value.splitMode==='fixed'&&(Number(entryDraft.value.splitAmount)<0||Number(entryDraft.value.splitAmount)>Number(entryDraft.value.amount)))throw new Error('本人固定分摊金额不能超过流水金额')
-    if(entryDraft.value.offsetEnabled&&(entryDraft.value.kind!=='expense'||!snapshot.value.categories.some(item=>item.id===entryDraft.value.offsetCategoryId&&item.flowType==='income')||Number(entryDraft.value.offsetRatio)<=0||Number(entryDraft.value.offsetRatio)>100))throw new Error('抵扣收入需要支出流水、收入分类及 0 至 100 的比例')
     const draft={title:entryDraft.value.title,amount:Number(entryDraft.value.amount),kind:entryDraft.value.kind,happenedAt:new Date(entryDraft.value.happenedAt).toISOString(),categoryId:entryDraft.value.categoryId||null,bookIds:entryDraft.value.bookIds,hasExplicitBookSelection:entryExplicitBooks.value,ledgerSplitSettings:entrySplitSettings.value,paymentMethod:entryDraft.value.paymentMethod,merchant:entryDraft.value.merchant,note:entryDraft.value.note,installmentMonths:entryInstallmentEnabled.value?Number(entryDraft.value.installmentMonths):1,installmentStartMonth:entryInstallmentEnabled.value?new Date(entryInstallmentStartDate.value+'T00:00:00').toISOString():null,originalAmount:Number(entryDraft.value.originalAmount)||null,discountAmount:Number(entryDraft.value.discountAmount)||null,premiumAmount:Number(entryDraft.value.premiumAmount)||null,paidByParticipantId:entryDraft.value.payer||null,splitParticipantIds:entryDraft.value.splitParticipantIds,splitMode:entryDraft.value.splitMode,splitRatio:entryDraft.value.splitMode==='ratio'?Number(entryDraft.value.splitRatio):null,splitAmount:entryDraft.value.splitMode==='fixed'?Number(entryDraft.value.splitAmount):null,source:editingTransaction.value?.source||'manual'}
-    previousTransactions=JSON.parse(JSON.stringify(snapshot.value.transactions))
-    const created=editingId.value?updateTransaction(snapshot.value,editingId.value,draft):createTransaction(snapshot.value,draft)
-    if(!editingId.value)snapshot.value.transactions.unshift(...created)
-    if(created[0])syncOffset(created[0],entryDraft.value.offsetEnabled,entryDraft.value.offsetCategoryId,Number(entryDraft.value.offsetRatio))
+    if(entryLinkedSource.value){Object.assign(draft,{offsetDateMode:entryOffsetDateMode.value});if(entryOffsetDateMode.value==='source')draft.happenedAt=entryLinkedSource.value.happenedAt}
+    const baseline=fingerprint(snapshot.value)
+    // Work on a detached snapshot: an open confirmation must never expose partial changes to sync.
+    const working=JSON.parse(JSON.stringify(snapshot.value)) as LedgerSnapshot
+    const created=editingId.value?updateTransaction(working,editingId.value,draft):createTransaction(working,draft)
+    if(!editingId.value)working.transactions.unshift(...created)
+    const source=created[0]!
+    const existing=linkedOffsets(working,source.id)
+    if(source.kind!=='expense'&&existing.length)throw new Error('请先关闭并保存全部抵扣，再将这笔支出改为收入')
+    if(source.kind==='expense'){
+      const baseAmount=editingId.value?source.amount:draft.amount
+      if(entryDraft.value.offsetEnabled){
+        const plan=planOffsets(working,source,entryOffsetEdits.value,entryOffsetDrafts.value,baseAmount)
+        let normalize=false
+        if(plan.overLimit){const choice=await entryOffsetManager.value?.confirmLimit(plan);if(!choice)return;normalize=choice==='normalize'}
+        applyOffsetChanges(working,source,entryOffsetEdits.value,entryOffsetDrafts.value,baseAmount,normalize)
+      }else if(existing.length){
+        const ids=existing.map(row=>row.id).sort().join('|')
+        if(ids!==[...entryClearOffsetIds.value].sort().join('|')&&!await entryOffsetManager.value?.confirmClearAll())return
+        applyOffsetChanges(working,source,[],[],baseAmount)
+      }
+    }
+    if(fingerprint(snapshot.value)!==baseline)throw new Error('账本在确认期间发生更新，请重新打开流水核对抵扣后再保存')
+    previousTransactions=snapshot.value.transactions;previousChannels=[...snapshot.value.settings.paymentChannels]
+    snapshot.value.transactions=working.transactions
     if(draft.paymentMethod&&!snapshot.value.settings.paymentChannels.includes(draft.paymentMethod))snapshot.value.settings.paymentChannels.push(draft.paymentMethod)
     await persist();entryOpen.value=false;activeTab.value=entryReturnTab.value;notify('流水已保存')
-  }catch(cause){if(previousTransactions)snapshot.value.transactions=previousTransactions;error.value=cause instanceof Error?cause.message:'保存流水失败'}finally{savingEntry.value=false}
+  }catch(cause){if(previousTransactions)snapshot.value.transactions=previousTransactions;if(previousChannels)snapshot.value.settings.paymentChannels=previousChannels;error.value=cause instanceof Error?cause.message:'保存流水失败'}finally{savingEntry.value=false}
 }
-function syncOffset(source:Transaction,enabled:boolean,categoryId:string,ratio:number){const existingIndex=snapshot.value.transactions.findIndex(row=>row.offsetSourceTransactionId===source.id);if(!enabled){if(existingIndex>=0)snapshot.value.transactions.splice(existingIndex,1);return}const category=snapshot.value.categories.find(item=>item.id===categoryId);if(!category)return;const offset=createOffsetTransaction(source,category,ratio,existingIndex>=0?snapshot.value.transactions[existingIndex].id:undefined);if(existingIndex>=0)snapshot.value.transactions.splice(existingIndex,1,offset);else snapshot.value.transactions.unshift(offset)}
-async function deleteTransaction(tx:Transaction){if(!window.confirm(`确定删除“${tx.title}”吗？删除后不可恢复。`))return;snapshot.value.transactions=snapshot.value.transactions.filter(item=>item.id!==tx.id&&item.offsetSourceTransactionId!==tx.id);await persist();notify('流水已删除')}
-async function removeTransactionFromBook(book:Book,tx:Transaction){if(!window.confirm(`仅从“${book.name}”移除“${tx.title}”？流水会保留在其他位置。`))return;tx.bookIds=tx.bookIds.filter(id=>id!==book.id);if(tx.ledgerSplitSettings)delete tx.ledgerSplitSettings[book.id];snapshot.value.transactions.filter(item=>item.offsetSourceTransactionId===tx.id).forEach(item=>item.bookIds=item.bookIds.filter(id=>id!==book.id));await persist();notify('已从当前账本移除')}
+// OCR creates a single initial offset; subsequent edits use OffsetManager's independent rows.
+function syncOffset(source:Transaction,enabled:boolean,categoryId:string,ratio:number){if(!enabled){const ids=new Set(linkedOffsets(snapshot.value,source.id).map(row=>row.id));snapshot.value.transactions=snapshot.value.transactions.filter(row=>!ids.has(row.id));return}const category=snapshot.value.categories.find(item=>item.id===categoryId);if(!category)throw new Error('请选择有效的抵扣收入分类');snapshot.value.transactions.unshift(createOffsetTransaction(source,category,ratio))}
+async function deleteTransaction(tx:Transaction){
+  if(savingEntry.value)return
+  const scope=tx.installmentGroupId?'仅删除当前这一期及其关联抵扣，其他分期会保留。':'同时删除这笔支出的关联抵扣。'
+  if(!window.confirm('确定删除“'+tx.title+'”？'+scope+' 删除后不可恢复。'))return
+  const previous=JSON.parse(JSON.stringify(snapshot.value.transactions)) as Transaction[]
+  try{savingEntry.value=true;deleteTransactionRecords(snapshot.value,tx.id);await persist();notify('流水已删除')}catch(cause){snapshot.value.transactions=previous;error.value=cause instanceof Error?cause.message:'删除失败，已保留原流水'}finally{savingEntry.value=false}
+}
+async function removeTransactionFromBook(book:Book,tx:Transaction){
+  if(savingEntry.value)return
+  const offsets=linkedOffsets(snapshot.value,tx.id)
+  if(!window.confirm(`从“${book.name}”移除“${tx.title}”${offsets.length?`及其 ${offsets.length} 笔关联抵扣`:''}？流水仍保留在全部流水及其他关联账本中。`))return
+  const previous=JSON.parse(JSON.stringify(snapshot.value.transactions)) as Transaction[]
+  try{savingEntry.value=true;for(const row of [tx,...offsets]){row.bookIds=row.bookIds.filter(id=>id!==book.id);if(row.ledgerSplitSettings)delete row.ledgerSplitSettings[book.id]}await persist();notify('已从当前账本移除')}
+  catch(cause){snapshot.value.transactions=previous;error.value=cause instanceof Error?cause.message:'移除失败，已保留原账本关联'}finally{savingEntry.value=false}
+}
 function bookSettlement(book:Book){const members=new Map(book.participants.map(person=>[person.id,{id:person.id,name:person.name,paid:0,owed:0}]));if(!members.has('我'))members.set('我',{id:'我',name:'我',paid:0,owed:0});for(const tx of snapshot.value.transactions.filter(item=>item.bookIds.includes(book.id)&&item.kind==='expense'&&item.includeInStatistics)){const split=tx.ledgerSplitSettings?.[book.id]||tx;const ids=split.splitParticipantIds.length?split.splitParticipantIds:['我'];let selfShare=tx.amount/ids.length;if(split.splitMode==='ratio'&&split.splitRatio!=null)selfShare=tx.amount*split.splitRatio/100;if(split.splitMode==='fixed'&&split.splitAmount!=null)selfShare=split.splitAmount;const otherShare=ids.length>1?(tx.amount-selfShare)/(ids.length-1):0;for(const id of ids){const member=members.get(id)||{id,name:id,paid:0,owed:0};member.owed+=id==='我'?selfShare:otherShare;members.set(id,member)}const payer=split.paidByParticipantId||'我';const payerRow=members.get(payer)||{id:payer,name:payer,paid:0,owed:0};payerRow.paid+=tx.amount;members.set(payer,payerRow)}return[...members.values()].map(person=>({...person,net:person.paid-person.owed})).sort((a,b)=>a.name.localeCompare(b.name,'zh-CN'))}
 async function createOrUpdateBook(){
   if(savingBook.value)return
@@ -453,7 +521,7 @@ watch(()=>[snapshot.value.settings.cloudSyncEnabled,snapshot.value.settings.midn
 <template>
   <main class="ledger-app" :class="`theme-${snapshot.settings.appearanceMode}`" :style="snapshot.settings.backgroundDataUrl?{backgroundImage:`linear-gradient(var(--ledger-image-overlay),var(--ledger-image-overlay)),url(${snapshot.settings.backgroundDataUrl})`}:{}" @keydown.esc="calendarOpen=false">
     <aside class="ledger-sidebar"><a class="ledger-brand" href="/"><span>🐟</span><b>SmartLedger</b></a><nav><button v-for="item in [{id:'overview',label:'概览',icon:'overview'},{id:'books',label:'账本',icon:'book'},{id:'transactions',label:'流水',icon:'list'},{id:'import',label:'识图',icon:'scan'},{id:'more',label:'更多',icon:'more'}]" :key="item.id" :class="{active:activeTab===item.id}" @click="navigateTab(item.id)"><i><UiIcon :name="item.icon" :size="21"/></i>{{ item.label }}</button></nav><div class="sidebar-spacer"></div><div class="account-chip"><span class="avatar">{{ user.profile?.name?.toString().slice(0,1)||'我' }}</span><div><b>{{ user.profile?.name||'本地超管' }}</b><small>{{ user.profile?.email||'本地账户' }}</small></div></div></aside>
-    <section class="ledger-main"><header class="ledger-topbar"><div><small>SMARTLEDGER / {{ selectedBook?.name||'个人空间' }}</small><h1>{{ bookId&&selectedBook?'旅行账本':activeTab==='overview'?'概览':activeTab==='books'?'账本':activeTab==='transactions'?'流水':activeTab==='import'?'识图导入':activeTab==='entry'?'记账':morePage==='menu'?'更多':morePage==='settings'?'设置':morePage==='categories'?'分类':'预算' }}</h1></div><div class="top-actions"><button class="icon-button calendar-shortcut" title="收支日历" aria-label="收支日历" @click="openCalendar"><UiIcon name="calendar" :size="18"/></button><button class="icon-button" title="云同步" aria-label="云同步" @click="syncNow()"><UiIcon name="sync" :size="18"/><span>{{ syncMessage.includes('完成')?'已同步':'同步' }}</span></button><button class="primary-button" @click="openEntry()"><UiIcon name="plus" :size="17"/>记一笔</button></div></header>
+    <section class="ledger-main"><header class="ledger-topbar"><div><small>SMARTLEDGER / {{ selectedBook?.name||'个人空间' }}</small><h1>{{ bookId&&selectedBook?'旅行账本':activeTab==='overview'?'概览':activeTab==='books'?'账本':activeTab==='transactions'?'流水':activeTab==='import'?'识图导入':activeTab==='entry'?'记账':morePage==='menu'?'更多':morePage==='settings'?'设置':morePage==='categories'?'分类':'预算' }}</h1></div><div class="top-actions"><AppSwitcher/><button class="icon-button calendar-shortcut" title="收支日历" aria-label="收支日历" @click="openCalendar"><UiIcon name="calendar" :size="18"/></button><button class="icon-button" title="云同步" aria-label="云同步" @click="syncNow()"><UiIcon name="sync" :size="18"/><span>{{ syncMessage.includes('完成')?'已同步':'同步' }}</span></button><button class="primary-button" @click="openEntry()"><UiIcon name="plus" :size="17"/>记一笔</button></div></header>
       <div v-if="loading" class="loading-state">正在打开本地账本…</div>
       <div v-else-if="error" class="notice error-notice">{{ error }} <button @click="error=''">关闭</button></div>
       <section v-if="syncConflict" class="conflict-banner"><div><b>本地与云端都有更新</b><p>选择保留一侧，另一侧的数据会被替换。</p><small>本地 {{ syncConflict.local.transactions.length }} 笔 · 云端 {{ syncConflict.remote.snapshot?.transactions.length||0 }} 笔</small></div><button @click="resolveSyncConflict(false)">采用云端</button><button class="primary-button" @click="resolveSyncConflict(true)">保留本地</button></section>
@@ -485,10 +553,10 @@ watch(()=>[snapshot.value.settings.cloudSyncEnabled,snapshot.value.settings.midn
         <form class="entry-editor feature-form" @submit.prevent="saveEntry">
           <header class="feature-form-header"><div><span class="home-eyebrow">{{ editingId?'EDIT TRANSACTION':'NEW TRANSACTION' }}</span><h2>{{ editingId?'修改流水':'记录这一笔' }}</h2><p>整理账本、分类与分期，让每笔收支清清楚楚</p></div><button type="button" class="feature-icon-button" aria-label="关闭记账" @click="cancelEntry"><UiIcon name="close"/></button></header>
           <div v-if="entryOpen" class="entry-form-body">
-            <section class="feature-section entry-basic"><div class="feature-fields"><label>收支类型<select v-model="entryDraft.kind"><option value="expense">支出</option><option value="income">收入</option></select></label><label>金额<input v-model="entryDraft.amount" type="number" min="0.01" step="0.01" required placeholder="0.00"/></label><label>名称<input v-model.trim="entryDraft.title" required maxlength="240" placeholder="这笔钱用在了哪里？"/></label><label>时间<input v-model="entryDraft.happenedAt" type="datetime-local" required/></label><CategoryPicker v-model="entryDraft.categoryId" title="分类" placeholder="未分类" :allow-unassigned="true" :categories="flatCategories" :flow-type="entryDraft.kind" :appearance-mode="snapshot.settings.appearanceMode"/><label>支付渠道<input v-model.trim="entryDraft.paymentMethod" list="payment-channels" placeholder="微信、支付宝、银行卡…"/><datalist id="payment-channels"><option v-for="channel in snapshot.settings.paymentChannels" :key="channel" :value="channel"/></datalist></label></div></section>
+            <section class="feature-section entry-basic"><div class="feature-fields"><label>收支类型<select v-model="entryDraft.kind"><option value="expense">支出</option><option value="income">收入</option></select></label><label>金额<input v-model="entryDraft.amount" type="number" min="0.01" step="0.01" required placeholder="0.00"/></label><label>名称<input v-model.trim="entryDraft.title" required maxlength="240" placeholder="这笔钱用在了哪里？"/></label><label>时间<input v-model="entryDraft.happenedAt" type="datetime-local" required @input="entryLinkedSource&&(entryOffsetDateMode='independent')"/><span v-if="entryLinkedSource" class="offset-date-follow"><input type="checkbox" :checked="entryOffsetDateMode==='source'" @change="setEntryOffsetDateFollow"/>日期跟随原支出</span></label><CategoryPicker v-model="entryDraft.categoryId" title="分类" placeholder="未分类" :allow-unassigned="true" :categories="flatCategories" :flow-type="entryDraft.kind" :appearance-mode="snapshot.settings.appearanceMode"/><label>支付渠道<input v-model.trim="entryDraft.paymentMethod" list="payment-channels" placeholder="微信、支付宝、银行卡…"/><datalist id="payment-channels"><option v-for="channel in snapshot.settings.paymentChannels" :key="channel" :value="channel"/></datalist></label></div></section>
             <BookAssignmentPicker v-model="entryDraft.bookIds" v-model:explicit="entryExplicitBooks" v-model:split-settings="entrySplitSettings" :snapshot="snapshot" :happened-at="entryDraft.happenedAt" :category-id="entryDraft.categoryId||null" :kind="entryDraft.kind" :editing="Boolean(editingId)"/>
             <InstallmentControls v-model:enabled="entryInstallmentEnabled" :months="Number(entryDraft.installmentMonths)||2" @update:months="entryDraft.installmentMonths=String($event)" v-model:start-date="entryInstallmentStartDate" :amount="Number(entryDraft.amount)" :existing="Boolean(editingTransaction?.installmentGroupId)" :index="editingTransaction?.installmentIndex" :original-total="editingTransaction?.installmentOriginalTotal" @update:enabled="($event) => { if($event&&Number(entryDraft.installmentMonths)<2)entryDraft.installmentMonths='2' }" @cancel="manageInstallment('cancel')" @payoff="manageInstallment('payoff')"/>
-            <section v-if="entryDraft.kind==='expense'" class="feature-section"><header class="feature-heading"><div><h3>抵扣与报销</h3><p>按原始总额生成关联收入，分期不会缩减报销金额</p></div><label class="feature-switch"><input v-model="entryDraft.offsetEnabled" type="checkbox"/><span></span><b>启用</b></label></header><div v-if="entryDraft.offsetEnabled" class="feature-fields"><CategoryPicker v-model="entryDraft.offsetCategoryId" title="收入分类" placeholder="选择报销或退款分类" :categories="flatCategories" flow-type="income" :appearance-mode="snapshot.settings.appearanceMode"/><label>抵扣比例（%）<input v-model="entryDraft.offsetRatio" type="number" min="0.01" max="100" step="0.01"/></label></div></section>
+            <OffsetManager v-if="entryDraft.kind==='expense'" ref="entryOffsetManager" :enabled="entryDraft.offsetEnabled" @update:enabled="setEntryOffsetsEnabled" v-model:edits="entryOffsetEdits" v-model:drafts="entryOffsetDrafts" :existing="entryExistingOffsets" :amount="Number(entryDraft.amount)" :source-date="entryDraft.happenedAt" :editing="Boolean(editingId)" :categories="flatCategories" :appearance-mode="snapshot.settings.appearanceMode" :disabled="savingEntry" @clear="entryClearOffsetIds=$event"/>
             <details class="feature-section entry-advanced"><summary>更多信息 <span>商户、优惠、备注与个人分摊</span></summary><div class="feature-fields"><label>商户<input v-model.trim="entryDraft.merchant"/></label><label>原价<input v-model="entryDraft.originalAmount" type="number" min="0" step="0.01"/></label><label>优惠金额<input v-model="entryDraft.discountAmount" type="number" min="0" step="0.01"/></label><label>溢价金额<input v-model="entryDraft.premiumAmount" type="number" min="0" step="0.01"/></label><label>个人分摊方式<select v-model="entryDraft.splitMode"><option value="equal">平均分摊</option><option value="ratio">本人比例</option><option value="fixed">本人固定金额</option></select></label><label v-if="entryDraft.splitMode==='ratio'">本人比例（%）<input v-model="entryDraft.splitRatio" type="number" min="0" max="100"/></label><label v-if="entryDraft.splitMode==='fixed'">本人分摊金额<input v-model="entryDraft.splitAmount" type="number" min="0" :max="entryDraft.amount" step="0.01"/></label><label class="feature-full">备注<textarea v-model.trim="entryDraft.note" rows="3" placeholder="给这一笔留个备注"/></label></div></details>
             <p v-if="error" class="feature-error" role="alert">{{ error }}</p><footer class="feature-form-footer"><small>本地保存 · 按当前设置同步云端</small><button type="button" class="feature-button" :disabled="savingEntry" @click="cancelEntry">取消</button><button class="feature-button accent" :disabled="savingEntry">{{ savingEntry?'保存中…':'保存流水' }}</button></footer>
           </div>
@@ -515,14 +583,16 @@ watch(()=>[snapshot.value.settings.cloudSyncEnabled,snapshot.value.settings.midn
             <div class="sync-status"><span>云端版本</span><b>revision {{ readSyncMetadata(accountKey).revision }}</b><small>{{ syncMessage||'尚未同步' }}</small></div>
             <div class="settings-actions"><button class="primary-button" :disabled="busy" @click="syncNow()">智能同步</button><button class="secondary-button" :disabled="busy" @click="pushLocalNow()">仅推送</button><button class="secondary-button" :disabled="busy" @click="pullRemoteNow()">仅拉取</button></div>
           </section>
+          <ApiSecurityPanel :api-url="apiUrl" :token="user.access_token"/>
           <section class="settings-card nutstore-card"><header><span class="settings-icon">☁</span><div><h3>坚果云 WebDAV</h3><small>把当前账本快照备份到你的坚果云空间</small></div><span class="provider-badge">可选备份</span></header>
             <div class="nutstore-help">请先在坚果云的“安全选项 → 第三方应用管理”创建应用密码。这里填写坚果云注册邮箱和应用密码，不要填写登录密码。</div>
-            <label class="nutstore-field"><span>坚果云账号</span><input v-model.trim="nutstoreCredentials.username" type="email" autocomplete="username" placeholder="name@example.com"/></label>
-            <label class="nutstore-field"><span>第三方应用密码</span><input v-model="nutstoreCredentials.appPassword" type="password" autocomplete="current-password" placeholder="坚果云生成的应用密码"/></label>
+            <p class="nutstore-message">{{ nutstoreStatus.needsUpdate?'已有凭证需要恢复密钥或重新配置':nutstoreStatus.configured?`已加密保存 · ${nutstoreStatus.usernameMasked||'当前账号'}`:'尚未配置' }} · {{ nutstoreStatus.available?'AES-256-GCM 服务器加密存储':'服务器加密密钥未配置' }}</p>
+            <label class="nutstore-field"><span>坚果云账号</span><input v-model.trim="nutstoreCredentials.username" type="email" autocomplete="off" :placeholder="nutstoreStatus.configured?'更换配置时填写完整邮箱':'name@example.com'"/></label>
+            <label class="nutstore-field"><span>第三方应用密码</span><input v-model="nutstoreCredentials.appPassword" type="password" autocomplete="new-password" :placeholder="nutstoreStatus.configured?'已保存，留空继续使用；更新时重新填写':'坚果云生成的应用密码'"/></label>
             <p class="nutstore-endpoint">WebDAV 地址 <code>https://dav.jianguoyun.com/dav/</code></p>
-            <div class="settings-actions"><button class="secondary-button" :disabled="busy" @click="testNutstoreConnection">测试连接并保存</button><button class="primary-button" :disabled="busy" @click="backupNutstore">立即备份</button><button class="secondary-button" :disabled="busy" @click="restoreNutstore">从坚果云恢复</button><button class="text-button" @click="removeNutstoreConfig">清除配置</button></div>
+            <div class="settings-actions"><button class="secondary-button" :disabled="busy" @click="saveNutstoreOnly">加密保存配置</button><button class="secondary-button" :disabled="busy" @click="testNutstoreConnection">测试连接并保存</button><button class="primary-button" :disabled="busy" @click="backupNutstore">立即备份</button><button class="secondary-button" :disabled="busy" @click="restoreNutstore">从坚果云恢复</button><button class="text-button" :disabled="busy" @click="removeNutstoreConfig">清除配置</button></div>
             <p v-if="nutstoreMessage" class="nutstore-message" role="status">{{ nutstoreMessage }}</p>
-            <small class="privacy-note">配置保存在本机浏览器存储（未加密），不会进入账本快照；SmartLedger API 只代理 WebDAV 请求，不保存坚果云密码。建议使用可单独撤销的应用密码。恢复操作会替换本机账本。</small>
+            <small class="privacy-note">应用密码仅保留在当前标签页会话中，退出账号会清除；不会进入账本快照。API 不保存应用密码，请使用可单独撤销的第三方应用密码。恢复操作会替换本机账本。</small>
           </section>
           <section class="settings-card"><header><span class="settings-icon">✦</span><div><h3>本地数据</h3><small>演示数据只写入当前浏览器账本，可手动删除</small></div></header><div class="settings-actions"><button class="secondary-button" @click="generateDemo">生成模拟数据</button><span class="local-data-count">本机保存 {{ snapshot.transactions.length }} 笔流水 · {{ snapshot.books.length }} 本账</span></div></section>
         </div>
@@ -536,7 +606,7 @@ watch(()=>[snapshot.value.settings.cloudSyncEnabled,snapshot.value.settings.midn
         <label class="feature-check-row"><input v-model="bookDraft.isPinned" type="checkbox"/><span>置顶这个账本</span></label><p v-if="bookFormError" class="feature-error" role="alert">{{ bookFormError }}</p><footer class="feature-form-footer"><button type="button" class="feature-button" :disabled="savingBook" @click="bookOpen=false">取消</button><button class="feature-button accent" :disabled="savingBook">{{ savingBook?'保存中…':'保存账本' }}</button></footer></form></div>
       <div v-if="budgetOpen" class="modal-shade" @click.self="budgetOpen=false"><form class="modal-card" @submit.prevent="createBudget"><header><h2>{{ editingBudgetId?'编辑预算':'新建预算' }}</h2><button type="button" @click="budgetOpen=false">×</button></header><label>预算名称<input v-model.trim="budgetDraft.name" required/></label><label>限额<input v-model="budgetDraft.limitAmount" type="number" min="0.01" step="0.01" required/></label><label>周期<select v-model="budgetDraft.periodType"><option value="monthly">按月</option><option value="range">按起止时间</option></select></label><div v-if="budgetDraft.periodType==='monthly'" class="form-grid"><label>年份<input v-model.number="budgetDraft.year" type="number"/></label><label>月份<input v-model.number="budgetDraft.month" type="number" min="1" max="12"/></label></div><div v-else class="form-grid"><label>开始<input v-model="budgetDraft.startDate" type="date"/></label><label>结束<input v-model="budgetDraft.endDate" type="date"/></label></div><CategoryPicker v-model="budgetDraft.categoryIds" title="分类范围" placeholder="全部支出分类" :categories="flatCategories" flow-type="expense" :multiple="true" :appearance-mode="snapshot.settings.appearanceMode" /><label>账本<select v-model="budgetDraft.bookId"><option value="">全部账本</option><option v-for="book in snapshot.books" :key="book.id" :value="book.id">{{ book.name }}</option></select></label><footer><button type="button" class="secondary-button" @click="budgetOpen=false">取消</button><button class="primary-button">保存预算</button></footer></form></div>
       <p v-if="toast" class="toast">{{ toast }}</p>
-      <footer class="workspace-footer"><span>本地优先 · {{ snapshot.transactions.length }} 笔流水 · {{ snapshot.books.length }} 本账</span><a href="http://localhost:5173">返回 WhereToGo</a></footer>
+      <footer class="workspace-footer"><span>本地优先 · {{ snapshot.transactions.length }} 笔流水 · {{ snapshot.books.length }} 本账</span><nav class="workspace-app-links" aria-label="其他应用"><a :href="portalUrl">个人门户</a><a :href="travelUrl">打开 WhereToGo</a></nav></footer>
     </section>
   </main>
 </template>

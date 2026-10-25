@@ -1,3 +1,5 @@
+import { smartLedgerUrl } from '../appLinks'
+
 export interface TravelLedgerContext {
   id: string
   name: string
@@ -12,7 +14,7 @@ interface OpenTripBookResponse {
 }
 
 const ledgerApiUrl = import.meta.env.VITE_SMARTLEDGER_API_URL?.replace(/\/$/, '')
-const smartLedgerPublicUrl = import.meta.env.VITE_SMARTLEDGER_PUBLIC_URL
+const smartLedgerPublicUrl = smartLedgerUrl
 
 /** Resolve this WhereToGo trip to the signed-in user's SmartLedger book and navigate there. */
 export async function openTravelLedger(trip: TravelLedgerContext, accessToken: string): Promise<void> {
@@ -22,6 +24,7 @@ export async function openTravelLedger(trip: TravelLedgerContext, accessToken: s
     `${ledgerApiUrl}/api/v1/integrations/wheretogo/trips/${encodeURIComponent(trip.id)}/open`,
     {
       method: 'POST',
+      credentials: 'omit', redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(90000),
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
@@ -41,7 +44,7 @@ export async function openTravelLedger(trip: TravelLedgerContext, accessToken: s
   if (smartLedgerPublicUrl && destination.origin !== new URL(smartLedgerPublicUrl).origin) {
     throw new Error('SmartLedger 返回了未配置的页面地址')
   }
-  if (destination.protocol !== 'https:' && destination.hostname !== 'localhost') {
+  if (destination.protocol !== 'https:' && !['localhost','127.0.0.1','[::1]'].includes(destination.hostname)) {
     throw new Error('SmartLedger 页面必须使用 HTTPS')
   }
   window.location.assign(destination.toString())
@@ -50,8 +53,10 @@ export async function openTravelLedger(trip: TravelLedgerContext, accessToken: s
 /** Hand off trip context to SmartLedger; the access token stays inside SmartLedger. */
 export function openTripLedgerEntry(trip: TravelLedgerContext): void {
   if (!smartLedgerPublicUrl) throw new Error('SmartLedger 页面地址尚未配置')
-  const destination = new URL('/', smartLedgerPublicUrl)
-  if (destination.protocol !== 'https:' && destination.hostname !== 'localhost') {
+  const destination = new URL(smartLedgerPublicUrl)
+  destination.search = ''
+  destination.hash = ''
+  if (destination.protocol !== 'https:' && !['localhost','127.0.0.1','[::1]'].includes(destination.hostname)) {
     throw new Error('SmartLedger 页面必须使用 HTTPS')
   }
   destination.searchParams.set('travelTripId', trip.id)

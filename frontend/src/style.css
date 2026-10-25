@@ -278,6 +278,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translate(-50%, 8px); }
 
 .theme-dark { --ink: #e1e8e1; --panel: #222f27; --background: #18221c; }
+.app-shell.theme-dark { --muted:#a4b2a7;--border:#37453b;--accent:#b9dfc0; }
+.travel-ledger-shortcut{display:inline-flex;align-items:center;gap:6px;flex:none;padding:8px 11px;border:1px solid var(--border);border-radius:10px;background:var(--panel);color:var(--accent);text-decoration:none;font-size:12px;font-weight:600;}
+.travel-ledger-shortcut:hover{background:color-mix(in srgb,var(--accent) 9%,var(--panel));}
+@media(min-width:721px) and (max-width:1400px){.app-shell .global-search{width:130px;}.app-shell .global-search kbd{display:none;}.app-shell .top-actions{gap:8px;}.app-shell .topbar{gap:18px;}}
+@media(max-width:720px){.app-shell .global-search,.app-shell .avatar-button{display:none;}.travel-ledger-shortcut{padding:8px;font-size:11px;}.app-shell .top-actions{gap:7px;}}
 .theme-dark .topbar, .theme-dark .panel, .theme-dark .map-workspace { background-color: #222f27; border-color: #37453b; }
 .theme-dark .brand, .theme-dark .panel-heading h1, .theme-dark .trip-heading h2, .theme-dark .place-copy strong, .theme-dark .trip-select-copy strong, .theme-dark .itinerary-title h3, .theme-dark .stop-info strong { color: #e0e9e1; }
 .theme-dark .nav-link { color: #9caaa0; }

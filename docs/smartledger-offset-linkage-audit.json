@@ -1,0 +1,550 @@
+{
+  "date": "2026-10-25T13:57:26.754Z",
+  "nativeSource": "W:/SmartLedger/client/ios/SmartLedger/Core/LedgerStore.swift; repository 84bb767",
+  "method": "Production TypeScript and extracted Vue handlers, isolated fixtures and fake-indexeddb. Native expected behavior derived from Swift source; native runtime/browser/cloud were not executed. No production logic or user records changed.",
+  "counts": {
+    "total": 20,
+    "matches": 13,
+    "differences": 7
+  },
+  "results": [
+    {
+      "name": "delete-source-and-all-offsets-explicit",
+      "status": "matches",
+      "expected": [
+        "unrelated-same-title"
+      ],
+      "actual": [
+        "unrelated-same-title"
+      ]
+    },
+    {
+      "name": "delete-one-offset-keeps-source-and-other-offset-explicit",
+      "status": "matches",
+      "expected": {
+        "source": true,
+        "offsetIds": [
+          "offset-1"
+        ]
+      },
+      "actual": {
+        "source": true,
+        "offsetIds": [
+          "offset-1"
+        ]
+      }
+    },
+    {
+      "name": "delete-source-and-all-offsets-legacy",
+      "status": "matches",
+      "expected": [
+        "unrelated-same-title"
+      ],
+      "actual": [
+        "unrelated-same-title"
+      ]
+    },
+    {
+      "name": "delete-one-offset-keeps-source-and-other-offset-legacy",
+      "status": "matches",
+      "expected": {
+        "source": true,
+        "offsetIds": [
+          "offset-1"
+        ]
+      },
+      "actual": {
+        "source": true,
+        "offsetIds": [
+          "offset-1"
+        ]
+      }
+    },
+    {
+      "name": "delete-orphan-offset-independently",
+      "status": "matches",
+      "expected": false,
+      "actual": false
+    },
+    {
+      "name": "actual-delete-handler-deletes-all-linked-offsets",
+      "status": "matches",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "name": "delete-handler-local-save-failure-rolls-back",
+      "status": "matches",
+      "expected": [
+        {
+          "id": "expense-a",
+          "title": "原订单",
+          "amount": 100,
+          "kind": "expense",
+          "happenedAt": "2026-10-20T04:00:00Z",
+          "note": "原备注",
+          "merchant": "原商家",
+          "paymentMethod": "微信",
+          "source": "manual",
+          "currency": "CNY",
+          "categoryId": null,
+          "bookIds": [
+            "book-a",
+            "book-b"
+          ],
+          "installmentGroupId": null,
+          "installmentIndex": null,
+          "installmentMonths": null,
+          "installmentOriginalTotal": null,
+          "originalAmount": null,
+          "discountAmount": null,
+          "premiumAmount": null,
+          "paidByParticipantId": null,
+          "splitParticipantIds": [],
+          "includeInStatistics": true,
+          "splitMode": "equal",
+          "splitRatio": null,
+          "splitAmount": null,
+          "offsetSourceTransactionId": null,
+          "installmentStartMonth": null,
+          "ledgerSplitSettings": {}
+        },
+        {
+          "id": "offset-0",
+          "title": "原订单",
+          "amount": 30,
+          "kind": "income",
+          "happenedAt": "2026-10-21T04:00:00Z",
+          "note": "原备注",
+          "merchant": "原商家",
+          "paymentMethod": "微信",
+          "source": "offset:expense-a|manual",
+          "currency": "CNY",
+          "categoryId": "ff8ae623-31f7-48dd-b215-993878c420c1",
+          "bookIds": [
+            "book-a",
+            "book-b"
+          ],
+          "installmentGroupId": null,
+          "installmentIndex": null,
+          "installmentMonths": null,
+          "installmentOriginalTotal": null,
+          "originalAmount": null,
+          "discountAmount": null,
+          "premiumAmount": null,
+          "paidByParticipantId": null,
+          "splitParticipantIds": [],
+          "includeInStatistics": true,
+          "offsetSourceTransactionId": "expense-a"
+        },
+        {
+          "id": "offset-1",
+          "title": "原订单",
+          "amount": 20,
+          "kind": "income",
+          "happenedAt": "2026-10-22T04:00:00Z",
+          "note": "原备注",
+          "merchant": "原商家",
+          "paymentMethod": "微信",
+          "source": "offset:expense-a|manual",
+          "currency": "CNY",
+          "categoryId": "ff8ae623-31f7-48dd-b215-993878c420c1",
+          "bookIds": [
+            "book-a",
+            "book-b"
+          ],
+          "installmentGroupId": null,
+          "installmentIndex": null,
+          "installmentMonths": null,
+          "installmentOriginalTotal": null,
+          "originalAmount": null,
+          "discountAmount": null,
+          "premiumAmount": null,
+          "paidByParticipantId": null,
+          "splitParticipantIds": [],
+          "includeInStatistics": true,
+          "offsetSourceTransactionId": "expense-a"
+        },
+        {
+          "id": "unrelated-same-title",
+          "title": "原订单",
+          "amount": 100,
+          "kind": "expense",
+          "happenedAt": "2026-10-20T04:00:00Z",
+          "note": "",
+          "merchant": "",
+          "paymentMethod": "",
+          "source": "manual",
+          "currency": "CNY",
+          "categoryId": null,
+          "bookIds": [
+            "book-b"
+          ],
+          "installmentGroupId": null,
+          "installmentIndex": null,
+          "installmentMonths": null,
+          "installmentOriginalTotal": null,
+          "originalAmount": null,
+          "discountAmount": null,
+          "premiumAmount": null,
+          "paidByParticipantId": null,
+          "splitParticipantIds": [],
+          "includeInStatistics": true,
+          "splitMode": "equal",
+          "splitRatio": null,
+          "splitAmount": null,
+          "offsetSourceTransactionId": null,
+          "installmentStartMonth": null,
+          "ledgerSplitSettings": {}
+        }
+      ],
+      "actual": [
+        {
+          "id": "expense-a",
+          "title": "原订单",
+          "amount": 100,
+          "kind": "expense",
+          "happenedAt": "2026-10-20T04:00:00Z",
+          "note": "原备注",
+          "merchant": "原商家",
+          "paymentMethod": "微信",
+          "source": "manual",
+          "currency": "CNY",
+          "categoryId": null,
+          "bookIds": [
+            "book-a",
+            "book-b"
+          ],
+          "installmentGroupId": null,
+          "installmentIndex": null,
+          "installmentMonths": null,
+          "installmentOriginalTotal": null,
+          "originalAmount": null,
+          "discountAmount": null,
+          "premiumAmount": null,
+          "paidByParticipantId": null,
+          "splitParticipantIds": [],
+          "includeInStatistics": true,
+          "splitMode": "equal",
+          "splitRatio": null,
+          "splitAmount": null,
+          "offsetSourceTransactionId": null,
+          "installmentStartMonth": null,
+          "ledgerSplitSettings": {}
+        },
+        {
+          "id": "offset-0",
+          "title": "原订单",
+          "amount": 30,
+          "kind": "income",
+          "happenedAt": "2026-10-21T04:00:00Z",
+          "note": "原备注",
+          "merchant": "原商家",
+          "paymentMethod": "微信",
+          "source": "offset:expense-a|manual",
+          "currency": "CNY",
+          "categoryId": "ff8ae623-31f7-48dd-b215-993878c420c1",
+          "bookIds": [
+            "book-a",
+            "book-b"
+          ],
+          "installmentGroupId": null,
+          "installmentIndex": null,
+          "installmentMonths": null,
+          "installmentOriginalTotal": null,
+          "originalAmount": null,
+          "discountAmount": null,
+          "premiumAmount": null,
+          "paidByParticipantId": null,
+          "splitParticipantIds": [],
+          "includeInStatistics": true,
+          "offsetSourceTransactionId": "expense-a"
+        },
+        {
+          "id": "offset-1",
+          "title": "原订单",
+          "amount": 20,
+          "kind": "income",
+          "happenedAt": "2026-10-22T04:00:00Z",
+          "note": "原备注",
+          "merchant": "原商家",
+          "paymentMethod": "微信",
+          "source": "offset:expense-a|manual",
+          "currency": "CNY",
+          "categoryId": "ff8ae623-31f7-48dd-b215-993878c420c1",
+          "bookIds": [
+            "book-a",
+            "book-b"
+          ],
+          "installmentGroupId": null,
+          "installmentIndex": null,
+          "installmentMonths": null,
+          "installmentOriginalTotal": null,
+          "originalAmount": null,
+          "discountAmount": null,
+          "premiumAmount": null,
+          "paidByParticipantId": null,
+          "splitParticipantIds": [],
+          "includeInStatistics": true,
+          "offsetSourceTransactionId": "expense-a"
+        },
+        {
+          "id": "unrelated-same-title",
+          "title": "原订单",
+          "amount": 100,
+          "kind": "expense",
+          "happenedAt": "2026-10-20T04:00:00Z",
+          "note": "",
+          "merchant": "",
+          "paymentMethod": "",
+          "source": "manual",
+          "currency": "CNY",
+          "categoryId": null,
+          "bookIds": [
+            "book-b"
+          ],
+          "installmentGroupId": null,
+          "installmentIndex": null,
+          "installmentMonths": null,
+          "installmentOriginalTotal": null,
+          "originalAmount": null,
+          "discountAmount": null,
+          "premiumAmount": null,
+          "paidByParticipantId": null,
+          "splitParticipantIds": [],
+          "includeInStatistics": true,
+          "splitMode": "equal",
+          "splitRatio": null,
+          "splitAmount": null,
+          "offsetSourceTransactionId": null,
+          "installmentStartMonth": null,
+          "ledgerSplitSettings": {}
+        }
+      ]
+    },
+    {
+      "name": "delete-cancelled-confirmation-keeps-all-records",
+      "status": "matches",
+      "expected": 4,
+      "actual": 4
+    },
+    {
+      "name": "delete-book-keeps-source-and-offset-records",
+      "status": "matches",
+      "expected": {
+        "count": 4,
+        "sourceBooks": [
+          "book-b"
+        ],
+        "offsetBooks": [
+          [
+            "book-b"
+          ],
+          [
+            "book-b"
+          ]
+        ]
+      },
+      "actual": {
+        "count": 4,
+        "sourceBooks": [
+          "book-b"
+        ],
+        "offsetBooks": [
+          [
+            "book-b"
+          ],
+          [
+            "book-b"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "remove-source-from-one-book-keeps-offset-memberships-explicit",
+      "status": "differs",
+      "expected": {
+        "sourceBooks": [
+          "book-b"
+        ],
+        "offsetBooks": [
+          [
+            "book-a",
+            "book-b"
+          ],
+          [
+            "book-a",
+            "book-b"
+          ]
+        ]
+      },
+      "actual": {
+        "sourceBooks": [
+          "book-b"
+        ],
+        "offsetBooks": [
+          [
+            "book-b"
+          ],
+          [
+            "book-b"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "remove-source-from-one-book-keeps-offset-memberships-legacy",
+      "status": "differs",
+      "expected": {
+        "sourceBooks": [
+          "book-b"
+        ],
+        "offsetBooks": [
+          [
+            "book-a",
+            "book-b"
+          ],
+          [
+            "book-a",
+            "book-b"
+          ]
+        ]
+      },
+      "actual": {
+        "sourceBooks": [
+          "book-b"
+        ],
+        "offsetBooks": [
+          [
+            "book-b"
+          ],
+          [
+            "book-b"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "editing-source-amount-keeps-existing-refund-amounts",
+      "status": "differs",
+      "expected": [
+        30,
+        20
+      ],
+      "actual": [
+        30,
+        60
+      ]
+    },
+    {
+      "name": "editing-source-with-one-offset-keeps-its-actual-refund-amount",
+      "status": "differs",
+      "expected": 30,
+      "actual": 60
+    },
+    {
+      "name": "saving-source-keeps-independent-refund-dates",
+      "status": "differs",
+      "expected": [
+        "2026-10-21T04:00:00Z",
+        "2026-10-22T04:00:00Z"
+      ],
+      "actual": [
+        "2026-10-21T04:00:00Z",
+        "2026-10-20T04:00:00.000Z"
+      ]
+    },
+    {
+      "name": "source-descriptive-fields-propagate-to-all-offsets",
+      "status": "differs",
+      "expected": [
+        {
+          "title": "更新标题",
+          "merchant": "更新商户",
+          "note": "更新备注"
+        },
+        {
+          "title": "更新标题",
+          "merchant": "更新商户",
+          "note": "更新备注"
+        }
+      ],
+      "actual": [
+        {
+          "title": "原订单",
+          "merchant": "原商家",
+          "note": "原备注"
+        },
+        {
+          "title": "抵扣 · 更新标题",
+          "merchant": "更新商户",
+          "note": "关联支出抵扣/报销"
+        }
+      ]
+    },
+    {
+      "name": "native-allowed-over-100-percent-after-confirmation",
+      "status": "differs",
+      "expected": 150,
+      "actual": "抵扣收入需关联支出、收入分类和有效比例"
+    },
+    {
+      "name": "cancel-installment-then-delete-removes-relinked-offset-explicit",
+      "status": "matches",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "name": "cancel-installment-then-delete-removes-relinked-offset-legacy",
+      "status": "matches",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "name": "payoff-removes-only-future-period-offsets",
+      "status": "matches",
+      "expected": {
+        "past": true,
+        "future": false
+      },
+      "actual": {
+        "past": true,
+        "future": false
+      }
+    },
+    {
+      "name": "deleted-relations-stay-deleted-after-json-and-indexeddb-roundtrip",
+      "status": "matches",
+      "expected": [
+        "unrelated-same-title"
+      ],
+      "actual": [
+        "unrelated-same-title"
+      ]
+    }
+  ],
+  "observations": [
+    {
+      "name": "single-offset-toggle-off-with-multiple-linked-offsets",
+      "remainingOffsetAmounts": [
+        20
+      ],
+      "note": "Current UI disables its only offset switch but deletes just the first existing offset; native manages independent offset rows."
+    },
+    {
+      "name": "remove-from-book-failed-save-does-not-restore-in-memory-memberships",
+      "sourceBookIds": [
+        "book-b"
+      ],
+      "offsetBookIds": [
+        [
+          "book-b"
+        ],
+        [
+          "book-b"
+        ]
+      ],
+      "note": "Robustness observation; not asserted as a native parity rule."
+    }
+  ]
+}

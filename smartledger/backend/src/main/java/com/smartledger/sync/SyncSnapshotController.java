@@ -43,6 +43,8 @@ public class SyncSnapshotController {
     @PutMapping
     @Transactional
     public SnapshotResponse put(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody SnapshotWrite request) {
+        SnapshotValidator.validate(request.getSnapshot());
+        if(request.getSchemaVersion()!=request.getSnapshot().path("schemaVersion").asInt())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"快照版本与请求版本不一致");
         UUID userId = userId(jwt);
         String body;
         try { body = objectMapper.writeValueAsString(request.getSnapshot()); }

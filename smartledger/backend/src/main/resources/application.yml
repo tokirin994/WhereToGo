@@ -5,14 +5,30 @@ spring:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5433/smartledger}
     username: ${SPRING_DATASOURCE_USERNAME:smartledger}
     password: ${SPRING_DATASOURCE_PASSWORD:}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:4}
+      minimum-idle: 0
+      connection-timeout: 15000
+      idle-timeout: 60000
   flyway:
     enabled: true
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: ${SMARTLEDGER_OIDC_ISSUER}
+    table: ${FLYWAY_HISTORY_TABLE:flyway_schema_history}
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
 server:
+  forward-headers-strategy: none
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+  tomcat:
+    max-http-form-post-size: 1MB
+    max-swallow-size: 1MB
+    connection-timeout: 20000
+    threads:
+      max: ${HTTP_MAX_THREADS:32}
+      min-spare: 2
   port: ${PORT:8090}
 management:
   endpoints:
@@ -20,7 +36,23 @@ management:
       exposure:
         include: health,info
 smartledger:
+  credentials:
+    key-file: ${SMARTLEDGER_CREDENTIAL_KEY_FILE:}
+    keyring: ${SMARTLEDGER_CREDENTIAL_KEYRING:}
   public-url: ${SMARTLEDGER_PUBLIC_URL:http://localhost:5174}
-  security:
-    audience: ${SMARTLEDGER_OIDC_AUDIENCE}
   allowed-origins: ${SMARTLEDGER_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174}
+
+api:
+  security:
+    issuer: ${SMARTLEDGER_OIDC_ISSUER:}
+    audience: ${SMARTLEDGER_OIDC_AUDIENCE:smartledger-api}
+    jwk-set-uri: ${API_OIDC_JWK_SET_URI:}
+    local-development: false
+    allow-any-authenticated-user: ${API_ALLOW_ANY_AUTHENTICATED_USER:false}
+    allowed-origins: ${SMARTLEDGER_ALLOWED_ORIGINS:}
+    allowed-subjects: ${API_ALLOWED_SUBJECTS:}
+    max-request-bytes: ${API_MAX_REQUEST_BYTES:11534336}
+    requests-per-minute: ${API_REQUESTS_PER_MINUTE:120}
+    writes-per-minute: ${API_WRITES_PER_MINUTE:30}
+    peer-requests-per-minute: ${API_PEER_REQUESTS_PER_MINUTE:600}
+    webdav-requests-per-minute: ${API_WEBDAV_REQUESTS_PER_MINUTE:10}

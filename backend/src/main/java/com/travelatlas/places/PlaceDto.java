@@ -5,6 +5,14 @@ import java.util.List;
 import java.util.UUID;
 
 public class PlaceDto {
+    private boolean favorite;
+    private boolean visited;
+    private String notes;
+    private String sourceUrl;
+    public boolean isFavorite(){return favorite;} public void setFavorite(boolean v){favorite=v;}
+    public boolean isVisited(){return visited;} public void setVisited(boolean v){visited=v;}
+    public String getNotes(){return notes;} public void setNotes(String v){notes=v;}
+    public String getSourceUrl(){return sourceUrl;} public void setSourceUrl(String v){sourceUrl=v;}
     private UUID id;
     private String name;
     private String city;

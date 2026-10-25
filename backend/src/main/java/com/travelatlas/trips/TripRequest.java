@@ -13,6 +13,12 @@ public class TripRequest {
     private String notes;
     private LocalDate startsOn;
     private LocalDate endsOn;
+    @javax.validation.constraints.Pattern(regexp="planning|upcoming|ongoing|completed|archived") private String status;
+    private boolean shiftStops;
+    public boolean isShiftStops(){return shiftStops;} public void setShiftStops(boolean value){shiftStops=value;}
+    @javax.validation.Valid private TripPreferences preferences;
+    public String getStatus(){return status;} public void setStatus(String value){status=value;}
+    public TripPreferences getPreferences(){return preferences;} public void setPreferences(TripPreferences value){preferences=value;}
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }

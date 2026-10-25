@@ -1,0 +1,59 @@
+{
+    email {$ACME_EMAIL}
+    admin off
+}
+
+(api_headers) {
+    header {
+        -Server
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+        Cache-Control "no-store"
+    }
+}
+
+{$IDENTITY_HOST} {
+    import api_headers
+    @blocked_admin {
+        path /admin /admin/* /realms/master /realms/master/*
+        not remote_ip {$ADMIN_ALLOWED_CIDRS}
+    }
+    respond @blocked_admin "Administration is restricted to the configured operator IP." 403
+    reverse_proxy identity:8080 {
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-Port 443
+        header_up -X-Real-IP
+    }
+}
+
+{$TRAVEL_API_HOST} {
+    import api_headers
+    request_body {
+        max_size 1MB
+    }
+    reverse_proxy travel-api:8080 {
+        header_up -X-Forwarded-For
+        header_up -X-Forwarded-Host
+        header_up -X-Forwarded-Proto
+        header_up -X-Forwarded-Port
+        header_up -X-Real-IP
+    }
+}
+
+{$LEDGER_API_HOST} {
+    import api_headers
+    request_body {
+        max_size 11MB
+    }
+    reverse_proxy ledger-api:8090 {
+        header_up -X-Forwarded-For
+        header_up -X-Forwarded-Host
+        header_up -X-Forwarded-Proto
+        header_up -X-Forwarded-Port
+        header_up -X-Real-IP
+    }
+}
+# No access log: OIDC callback codes, query strings and financial request payloads are not logged here.

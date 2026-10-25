@@ -1,5 +1,6 @@
+import { travelCacheKey } from '../auth'
 import { defineStore } from 'pinia'
-import { createPlace, deletePlace, fetchPlaces, updatePlace, type CreatePlaceInput, type PlaceRecord } from '../api/places'
+import { createPlace, createPlacesBatch, deletePlace, fetchPlaces, updatePlace, type CreatePlaceInput, type PlaceRecord } from '../api/places'
 
 export type PlaceCategory = '景点' | '美食' | '咖啡' | '住宿'
 export type DemoMapPosition = { x: number; y: number }
@@ -8,6 +9,7 @@ export type Place = {
   tags: string[]; thumb: 'lake' | 'temple' | 'food' | 'cafe' | 'hotel'
   mapPosition: DemoMapPosition | null; favorite: boolean
   longitude?: number | null; latitude?: number | null; coordinateStatus?: string
+  visited?:boolean;notes?:string;sourceUrl?:string|null
 }
 
 function isApiPlaceId(id: string) {
@@ -23,17 +25,17 @@ function placeFromApi(record: PlaceRecord): Place {
     category: record.category,
     tags: record.tags ?? [],
     thumb: record.category === '美食' ? 'food' : record.category === '咖啡' ? 'cafe' : record.category === '住宿' ? 'hotel' : 'lake',
-    // The current canvas is an explicitly labeled schematic, so real coordinates
-    // are retained as data but are not plotted on its made-up percentage grid.
+    // Plot longitude/latitude directly; never invent percentage coordinates for the legacy schematic.
     mapPosition: null,
-    favorite: false,
+    favorite: record.favorite??false,
+    visited:record.visited??false,notes:record.notes??'',sourceUrl:record.sourceUrl,
     longitude: record.longitude,
     latitude: record.latitude,
     coordinateStatus: record.coordinateStatus,
   }
 }
 
-const demoPlaces: Place[] = [
+export const demoPlaces: Place[] = [
   { id: 'place-west-lake', name: '西湖边的日落', city: '杭州', address: '地址待核验 · 演示地点', category: '景点', tags: ['日落', '湖景', '散步'], thumb: 'lake', mapPosition: { x: 43, y: 39 }, favorite: true },
   { id: 'place-lingyin', name: '灵隐寺与飞来峰', city: '杭州', address: '地址待核验 · 演示地点', category: '景点', tags: ['寺院', '文化'], thumb: 'temple', mapPosition: { x: 24, y: 28 }, favorite: true },
   { id: 'place-lou-wai-lou', name: '楼外楼', city: '杭州', address: '地址待核验 · 演示地点', category: '美食', tags: ['杭帮菜', '西湖边'], thumb: 'food', mapPosition: { x: 48, y: 44 }, favorite: false },
@@ -44,12 +46,12 @@ const demoPlaces: Place[] = [
 
 function loadPlaces(): Place[] {
   try {
-    const raw = localStorage.getItem('travelatlas.demo.places')
-    if (!raw) return demoPlaces
+    const raw = localStorage.getItem(travelCacheKey('places'))
+    if (!raw) return []
     const value: unknown = JSON.parse(raw)
     if (Array.isArray(value) && value.every((item) => item && typeof item.id === 'string')) return value as Place[]
-  } catch { /* Use the bundled demo list when storage is missing or disabled. */ }
-  return demoPlaces
+  } catch { /* New accounts start empty even when browser storage is unavailable. */ }
+  return []
 }
 
 export const usePlacesStore = defineStore('places', {
@@ -59,23 +61,24 @@ export const usePlacesStore = defineStore('places', {
     { id: 'stop-3', placeId: 'place-man-jue-long', placeName: '满觉陇桂语', time: '15:00', duration: '停留时长待安排', category: '山景咖啡', thumb: 'cafe' },
   ] }),
   actions: {
-    persist() { try { localStorage.setItem('travelatlas.demo.places', JSON.stringify(this.places)) } catch { /* Storage may be disabled. */ } },
+    async importPlaces(input:CreatePlaceInput[]){const saved=(await createPlacesBatch(input)).map(placeFromApi);this.places.unshift(...saved);this.apiConnected=true;this.persist();return saved},
+    persist() { try { localStorage.setItem(travelCacheKey('places'), JSON.stringify(this.places)) } catch { /* Storage may be disabled. */ } },
     async loadApiPlaces() {
       try {
         const records = await fetchPlaces()
         const apiPlaces = records.map(placeFromApi)
         const apiIds = new Set(apiPlaces.map((place) => place.id))
-        this.places = [...apiPlaces, ...this.places.filter((place) => !apiIds.has(place.id))]
+        this.places = [...apiPlaces, ...this.places.filter((place) => !isApiPlaceId(place.id) && !apiIds.has(place.id))]
         this.apiConnected = true
         this.persist()
       } catch {
         this.apiConnected = false
       }
     },
-    async addPlace(name: string, category: PlaceCategory, city: string, address = '地址待确认', tags: string[] = []) {
+    async addPlace(name: string, category: PlaceCategory, city: string, address = '地址待确认', tags: string[] = [],details:Partial<CreatePlaceInput>={}) {
       const place: Place = { id: `place-${crypto.randomUUID()}`, name, city: city.trim() || '未指定城市', address, category, tags, thumb: category === '美食' ? 'food' : category === '咖啡' ? 'cafe' : category === '住宿' ? 'hotel' : 'lake', mapPosition: null, favorite: false }
       try {
-        const record = await createPlace({ name, category, city: place.city, address: place.address, tags })
+        const record = await createPlace({ ...details,name, category, city: place.city, address: place.address, tags })
         const saved = placeFromApi(record)
         this.places.unshift(saved)
         this.apiConnected = true
@@ -83,7 +86,7 @@ export const usePlacesStore = defineStore('places', {
         return { place: saved, persisted: true }
       } catch (error) {
         if (!(error instanceof TypeError)) throw error
-        this.places.unshift(place)
+        Object.assign(place,details);this.places.unshift(place)
         this.apiConnected = false
         this.persist()
         return { place, persisted: false }
@@ -94,9 +97,9 @@ export const usePlacesStore = defineStore('places', {
       if (!current) throw new Error('地点不存在')
       if (isApiPlaceId(id)) {
         const saved = placeFromApi(await updatePlace(id, input))
-        Object.assign(current, saved, { favorite: current.favorite })
+        Object.assign(current, saved)
       } else {
-        Object.assign(current, { name: input.name, city: input.city, address: input.address, category: input.category, tags: input.tags, thumb: input.category === '美食' ? 'food' : input.category === '咖啡' ? 'cafe' : input.category === '住宿' ? 'hotel' : 'lake' })
+        Object.assign(current, input,{thumb: input.category === '美食' ? 'food' : input.category === '咖啡' ? 'cafe' : input.category === '住宿' ? 'hotel' : 'lake'})
       }
       this.persist()
       return current
@@ -106,7 +109,7 @@ export const usePlacesStore = defineStore('places', {
       this.places = this.places.filter((item) => item.id !== id)
       this.persist()
     },
-    toggleFavorite(id: string) { const place = this.places.find((item) => item.id === id); if (place) { place.favorite = !place.favorite; this.persist() } },
+    async toggleFavorite(id: string) { const place = this.places.find((item) => item.id === id); if(place)return this.updatePlace(id,{name:place.name,city:place.city,address:place.address,category:place.category,tags:place.tags,longitude:place.longitude,latitude:place.latitude,coordinateSystem:place.longitude!=null?'WGS84':null,favorite:!place.favorite}) },
     isFavorite(id: string) { return this.places.find((item) => item.id === id)?.favorite ?? false },
   },
 })

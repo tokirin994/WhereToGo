@@ -1,0 +1,166 @@
+{
+  "realm": "local",
+  "displayName": "我的空间 · 统一账号",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": true,
+  "loginTheme": "personal",
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "editUsernameAllowed": false,
+  "internationalizationEnabled": true,
+  "supportedLocales": [
+    "zh-CN",
+    "en"
+  ],
+  "defaultLocale": "zh-CN",
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 28800,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "passwordPolicy": "length(12) and digits(1) and lowerCase(1) and upperCase(1) and specialChars(1)",
+  "eventsEnabled": true,
+  "eventsExpiration": 604800,
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": false,
+  "roles": {
+    "realm": [
+      {
+        "name": "portal-admin",
+        "description": "个人门户账号管理员"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "wheretogo-web",
+      "name": "个人门户与旅行",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "rootUrl": "http://localhost:5173",
+      "baseUrl": "/",
+      "redirectUris": [
+        "http://localhost:5173/auth/callback",
+        "http://localhost:5173/auth/silent"
+      ],
+      "webOrigins": [
+        "http://localhost:5173"
+      ],
+      "frontchannelLogout": true,
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/auth/signed-out",
+        "frontchannel.logout.url": "http://localhost:5173/auth/frontchannel",
+        "frontchannel.logout.session.required": "true"
+      },
+      "defaultClientScopes": [
+        "basic",
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "travel-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "wheretogo-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "smartledger-web",
+      "name": "SmartLedger 记账",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "rootUrl": "http://localhost:5174",
+      "baseUrl": "/",
+      "redirectUris": [
+        "http://localhost:5174/auth/callback",
+        "http://localhost:5174/auth/silent"
+      ],
+      "webOrigins": [
+        "http://localhost:5174"
+      ],
+      "frontchannelLogout": true,
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5174/auth/signed-out",
+        "frontchannel.logout.url": "http://localhost:5174/auth/frontchannel",
+        "frontchannel.logout.session.required": "true"
+      },
+      "defaultClientScopes": [
+        "basic",
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "ledger-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "smartledger-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "local-demo-user",
+      "username": "admin",
+      "enabled": true,
+      "firstName": "本地",
+      "lastName": "管理员",
+      "email": "admin@local.example",
+      "emailVerified": false,
+      "requiredActions": [
+        "UPDATE_PASSWORD"
+      ],
+      "realmRoles": [
+        "portal-admin"
+      ],
+      "clientRoles": {
+        "realm-management": [
+          "realm-admin"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${PORTAL_INITIAL_PASSWORD}",
+          "temporary": true
+        }
+      ]
+    }
+  ]
+}

@@ -7,6 +7,19 @@ import javax.validation.constraints.Size;
 import java.util.List;
 
 public class PlaceRequest {
+    private Boolean favorite;
+    private Boolean visited;
+    @Size(max=5000) private String notes;
+    @Size(max=1500) private String sourceUrl;
+    public Boolean getFavorite(){return favorite;} public void setFavorite(Boolean v){favorite=v;}
+    public Boolean getVisited(){return visited;} public void setVisited(Boolean v){visited=v;}
+    public String getNotes(){return notes;} public void setNotes(String v){notes=v;}
+    public String getSourceUrl(){return sourceUrl;} public void setSourceUrl(String v){sourceUrl=v;}
+    @AssertTrue(message="来源链接必须是无内嵌账号密码的 HTTPS 地址")
+    public boolean isSourceUrlValid(){
+        if(sourceUrl==null||sourceUrl.isEmpty())return true;
+        try{java.net.URI uri=java.net.URI.create(sourceUrl);return "https".equals(uri.getScheme())&&uri.getHost()!=null&&uri.getUserInfo()==null;}catch(Exception e){return false;}
+    }
     @NotBlank @Size(max = 180) private String name;
     @NotBlank @Size(max = 120) private String city;
     @Size(max = 300) private String address;

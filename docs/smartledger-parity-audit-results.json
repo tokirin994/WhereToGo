@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-24",
+  "date": "2026-10-25T14:33:14.830Z",
   "timezone": "Asia/Hong_Kong",
   "method": "Execute current TypeScript core and extracted Vue handlers with isolated in-memory fixtures; native expectations from local Swift source. IndexedDB uses fake-indexeddb. No browser or real cloud login.",
   "counts": {
@@ -256,14 +256,14 @@
         "amount": 100,
         "group": null,
         "title": "电脑",
-        "source": "1e7498d2-506a-488f-afee-5ffdbbeb9c50"
+        "source": "9578c3be-f498-4dd7-8cdf-443bbb36a593"
       },
       "actual": {
         "count": 2,
         "amount": 100,
         "group": null,
         "title": "电脑",
-        "source": "1e7498d2-506a-488f-afee-5ffdbbeb9c50"
+        "source": "9578c3be-f498-4dd7-8cdf-443bbb36a593"
       }
     },
     {
@@ -295,13 +295,13 @@
         "count": 3,
         "months": 3,
         "index": 2,
-        "group": "f5ff8796-4078-4c81-9c3b-1b01f773f02e"
+        "group": "e6a354b1-6c86-4e7e-934a-02fe370a3866"
       },
       "actual": {
         "count": 3,
         "months": 3,
         "index": 2,
-        "group": "f5ff8796-4078-4c81-9c3b-1b01f773f02e"
+        "group": "e6a354b1-6c86-4e7e-934a-02fe370a3866"
       }
     },
     {

@@ -2,6 +2,9 @@ import { createServer } from 'node:http'
 import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto'
 import { URL } from 'node:url'
 
+if(process.env.LOCAL_AUTH_ENABLED!=='true')throw new Error('Local mock identity provider requires explicit LOCAL_AUTH_ENABLED=true')
+const allowedOrigins=new Set(['http://localhost:5173','http://127.0.0.1:5173','http://localhost:5174','http://127.0.0.1:5174'])
+
 // Local development OIDC provider. It binds only to loopback and is not suitable for deployment.
 const issuer = 'http://localhost:8091/realms/local'
 const clientId = 'smartledger-web'
@@ -14,7 +17,7 @@ jwk.alg = 'RS256'
 const codes = new Map()
 
 function json(res, value) {
-  res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'access-control-allow-origin': '*' })
+  res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options':'nosniff' })
   res.end(JSON.stringify(value))
 }
 
@@ -30,9 +33,12 @@ function token(claims) {
 }
 
 createServer(async (req, res) => {
+  const origin=req.headers.origin
+  if(origin&&!allowedOrigins.has(origin)){res.writeHead(403);return res.end('Origin not allowed')}
+  if(origin){res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin')}
   const url = new URL(req.url ?? '/', issuer)
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-headers': 'content-type' })
+    res.writeHead(204, { 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-headers': 'content-type' })
     return res.end()
   }
   if (url.pathname === '/realms/local/.well-known/openid-configuration') {
@@ -54,6 +60,8 @@ createServer(async (req, res) => {
   }
   if (url.pathname === '/realms/local/protocol/openid-connect/certs') return json(res, { keys: [jwk] })
   if (url.pathname === '/realms/local/mock-session' && req.method === 'GET') {
+    const requestedAudience=url.searchParams.get('aud')||audience
+    if(!['smartledger-api','wheretogo-api'].includes(requestedAudience)){res.writeHead(400);return res.end('Invalid audience')}
     const now = Math.floor(Date.now() / 1000)
     const requestedSubject = url.searchParams.get('sub')
     const subject = requestedSubject && /^[a-zA-Z0-9._:-]{1,120}$/.test(requestedSubject) ? requestedSubject : 'local-demo-user'
@@ -62,7 +70,7 @@ createServer(async (req, res) => {
     const claims = {
       iss: issuer,
       sub: profile.sub,
-      aud: audience,
+      aud: requestedAudience,
       iat: now,
       exp: now + 3600,
       ...profile,
@@ -82,6 +90,8 @@ createServer(async (req, res) => {
       return res.end('Invalid local OIDC authorization request')
     }
     const code = cryptoRandomCode()
+    for(const [key,value] of codes)if(value.expires<Date.now())codes.delete(key)
+    if(codes.size>=1000){res.writeHead(429);return res.end('Too many authorization requests')}
     codes.set(code, { redirectUri, challenge, nonce: url.searchParams.get('nonce'), expires: Date.now() + 60_000 })
     const redirect = new URL(redirectUri)
     redirect.searchParams.set('code', code)
@@ -91,7 +101,7 @@ createServer(async (req, res) => {
   }
   if (url.pathname === '/realms/local/protocol/openid-connect/token' && req.method === 'POST') {
     let raw = ''
-    for await (const chunk of req) raw += chunk
+    for await (const chunk of req) {raw+=chunk;if(raw.length>8192){res.writeHead(413);res.end('Request too large');return}}
     const form = new URLSearchParams(raw)
     const code = form.get('code')
     const record = codes.get(code)

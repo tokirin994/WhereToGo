@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@org.springframework.validation.annotation.Validated
 @RequestMapping("/api/v1/trips")
 public class TripController {
     private final TripService service;
@@ -28,6 +29,13 @@ public class TripController {
         return ResponseEntity.created(URI.create("/api/v1/trips/" + trip.getId())).body(trip);
     }
     @PutMapping("/{id}") public TripDto update(@PathVariable UUID id, @Valid @RequestBody TripRequest request) { return service.update(id, request); }
-    @PutMapping("/{id}/stops") public TripDto replaceStops(@PathVariable UUID id, @Valid @RequestBody List<@Valid TripStopRequest> stops) { return service.replaceStops(id, stops); }
+    @PostMapping("/{id}/duplicate") public TripDto duplicate(@PathVariable UUID id) { return service.duplicate(id); }
+    @PostMapping("/import") @org.springframework.transaction.annotation.Transactional
+    public TripDto importTrip(@Valid @RequestBody ImportRequest request){TripDto trip=service.create(request.trip);return service.replaceStops(trip.getId(),request.stops);}
+    public static class ImportRequest{
+        @javax.validation.constraints.NotNull @Valid public TripRequest trip;
+        @javax.validation.constraints.NotNull @javax.validation.constraints.Size(max=300) @Valid public List<@javax.validation.constraints.NotNull @Valid TripStopRequest> stops;
+    }
+    @PutMapping("/{id}/stops") public TripDto replaceStops(@PathVariable UUID id, @Valid @RequestBody @javax.validation.constraints.NotNull @javax.validation.constraints.Size(max=300) List<@javax.validation.constraints.NotNull @Valid TripStopRequest> stops) { return service.replaceStops(id, stops); }
     @DeleteMapping("/{id}") public ResponseEntity<Void> delete(@PathVariable UUID id) { service.delete(id); return ResponseEntity.noContent().build(); }
 }

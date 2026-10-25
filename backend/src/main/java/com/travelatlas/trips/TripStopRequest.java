@@ -6,18 +6,24 @@ import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Pattern;
 import javax.validation.constraints.Positive;
+import javax.validation.constraints.Max;
+import javax.validation.constraints.Min;
 import javax.validation.constraints.Size;
 
 public class TripStopRequest {
+    @javax.validation.constraints.DecimalMin("0") @javax.validation.constraints.DecimalMax("999999999") private java.math.BigDecimal estimatedCost=java.math.BigDecimal.ZERO;
+    private boolean completed;
+    public java.math.BigDecimal getEstimatedCost(){return estimatedCost;} public void setEstimatedCost(java.math.BigDecimal v){estimatedCost=v;}
+    public boolean isCompleted(){return completed;} public void setCompleted(boolean v){completed=v;}
     private UUID id;
     private UUID placeId;
     @NotNull private LocalDate dayDate;
     @NotBlank @Size(max = 180) private String placeName;
     @Size(max = 80) private String category;
     @Pattern(regexp = "^([01]\\d|2[0-3]):[0-5]\\d$") private String startsAt;
-    @Positive private Integer durationMinutes;
+    @Positive @Max(1440) private Integer durationMinutes;
     @Size(max = 500) private String note;
-    @NotNull private Integer sortOrder;
+    @NotNull @Min(0) @Max(299) private Integer sortOrder;
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }

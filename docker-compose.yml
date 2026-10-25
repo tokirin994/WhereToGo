@@ -22,6 +22,30 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/travelatlas
       SPRING_DATASOURCE_USERNAME: travelatlas
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?Copy .env.example to .env and set DB_PASSWORD}
+      APP_OIDC_ISSUER: ${APP_OIDC_ISSUER:?Set a trusted HTTPS OIDC issuer}
+      APP_OIDC_AUDIENCE: ${APP_OIDC_AUDIENCE:-wheretogo-api}
+      API_OIDC_JWK_SET_URI: ${API_OIDC_JWK_SET_URI:-}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS:?Set the exact frontend origin}
+      API_ALLOWED_SUBJECTS: ${API_ALLOWED_SUBJECTS:-}
+      API_ALLOW_ANY_AUTHENTICATED_USER: ${API_ALLOW_ANY_AUTHENTICATED_USER:-false}
+      API_REQUESTS_PER_MINUTE: ${API_REQUESTS_PER_MINUTE:-120}
+      API_WRITES_PER_MINUTE: ${API_WRITES_PER_MINUTE:-30}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-4}
+      FLYWAY_HISTORY_TABLE: ${FLYWAY_HISTORY_TABLE:-flyway_schema_history}
+      TRAVEL_AI_BASE_URL: ${TRAVEL_AI_BASE_URL:-}
+      TRAVEL_AI_API_KEY: ${TRAVEL_AI_API_KEY:-}
+      TRAVEL_AI_MODEL: ${TRAVEL_AI_MODEL:-}
+      TRAVEL_AI_PROTOCOL: ${TRAVEL_AI_PROTOCOL:-chat-completions}
+      TRAVEL_AI_TOKEN_FIELD: ${TRAVEL_AI_TOKEN_FIELD:-max_tokens}
+      TRAVEL_AI_AUTH_MODE: ${TRAVEL_AI_AUTH_MODE:-api-key}
+      TRAVEL_AI_ANTHROPIC_VERSION: ${TRAVEL_AI_ANTHROPIC_VERSION:-2023-06-01}
+      TRAVEL_AI_MAX_TOKENS: ${TRAVEL_AI_MAX_TOKENS:-6000}
+      TRAVEL_GEOCODER_PROVIDER: ${TRAVEL_GEOCODER_PROVIDER:-photon}
+      TRAVEL_GEOCODER_URL: ${TRAVEL_GEOCODER_URL-https://photon.komoot.io/api/}
+      TRAVEL_WEATHER_URL: ${TRAVEL_WEATHER_URL-https://api.open-meteo.com/v1/forecast}
+      TRAVEL_DESTINATION_SEARCH_URL: ${TRAVEL_DESTINATION_SEARCH_URL-https://geocoding-api.open-meteo.com/v1/search}
+      TRAVEL_ROUTING_DRIVING_URL: ${TRAVEL_ROUTING_DRIVING_URL-https://routing.openstreetmap.de/routed-car/route/v1/driving}
+      TRAVEL_ROUTING_WALKING_URL: ${TRAVEL_ROUTING_WALKING_URL-https://routing.openstreetmap.de/routed-foot/route/v1/driving}
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:

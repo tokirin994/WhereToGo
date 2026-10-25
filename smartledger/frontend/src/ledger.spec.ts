@@ -79,7 +79,7 @@ describe('SmartLedger core data and account rules', () => {
     const [expense]=createTransaction(snapshot,{title:'酒店',amount:88.88,kind:'expense',happenedAt:'2026-10-10T10:00:00Z'})
     const reimbursement=snapshot.categories.find(item=>item.name==='报销')!
     const offset=createOffsetTransaction(expense,reimbursement,35)
-    expect(offset).toMatchObject({amount:31.11,kind:'income',source:'offset',categoryId:reimbursement.id,offsetSourceTransactionId:expense.id})
+    expect(offset).toMatchObject({amount:31.11,kind:'income',source:`offset:${expense.id}|manual`,categoryId:reimbursement.id,offsetSourceTransactionId:expense.id})
     expect(()=>createOffsetTransaction(expense,snapshot.categories.find(item=>item.flowType==='expense')!,100)).toThrow()
   })
 

@@ -7,6 +7,29 @@ $node = 'D:\Application\Nodejs\node.exe'
 $pgBin = 'D:\Application\PostgreSQL16\pgsql\bin'
 New-Item -ItemType Directory -Force -Path $logs | Out-Null
 
+function Write-LocalWebSettings([string]$path, [hashtable]$values) {
+    $content = if (Test-Path -LiteralPath $path) { [IO.File]::ReadAllText($path) } else { '' }
+    foreach ($key in $values.Keys) {
+        $pattern = '(?m)^' + [regex]::Escape($key) + '=.*$'
+        $line = "$key=$($values[$key])"
+        if ([regex]::IsMatch($content, $pattern)) { $content = [regex]::Replace($content, $pattern, $line) }
+        else { $content = $content.TrimEnd() + "`n" + $line + "`n" }
+    }
+    [IO.File]::WriteAllText($path, $content.Trim() + "`n", [Text.UTF8Encoding]::new($false))
+}
+
+# Loopback development uses real Keycloak accounts. Production builds use separate HTTPS settings.
+Write-LocalWebSettings (Join-Path $repo 'frontend\.env.local') @{
+    VITE_API_BASE_URL='/api'; VITE_LOCAL_MOCK_AUTH='false'; VITE_OIDC_AUTHORITY='http://localhost:8091/realms/local';
+    VITE_OIDC_CLIENT_ID='wheretogo-web'; VITE_OIDC_AUDIENCE='wheretogo-api';
+    VITE_SMARTLEDGER_API_URL='http://localhost:8090'; VITE_SMARTLEDGER_PUBLIC_URL='http://localhost:5174'
+}
+Write-LocalWebSettings (Join-Path $repo 'smartledger\frontend\.env.local') @{
+    VITE_SMARTLEDGER_API_URL='http://localhost:8090'; VITE_LOCAL_MOCK_AUTH='false'; VITE_OIDC_AUTHORITY='http://localhost:8091/realms/local';
+    VITE_OIDC_CLIENT_ID='smartledger-web'; VITE_OIDC_AUDIENCE='smartledger-api';
+    VITE_PORTAL_PUBLIC_URL='http://localhost:5173/'; VITE_WHERE_TO_GO_PUBLIC_URL='http://localhost:5173/travel/'
+}
+
 function Test-Listening($port) {
     return [bool](Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue)
 }
@@ -27,15 +50,21 @@ if (-not (Test-Listening 5432)) {
 }
 Wait-Listening 5432
 
-if (-not (Test-Listening 8091)) {
-    Start-Process -FilePath $node -ArgumentList @((Join-Path $repo 'smartledger\local-auth\server.mjs')) `
-        -WorkingDirectory $repo -WindowStyle Hidden `
-        -RedirectStandardOutput (Join-Path $logs 'local-oidc.out.log') `
-        -RedirectStandardError (Join-Path $logs 'local-oidc.err.log') | Out-Null
+# Retire only this repository's legacy mock server; never stop an unrelated listener.
+if (Test-Listening 8091) {
+    $ownerId = (Get-NetTCPConnection -LocalPort 8091 -State Listen | Select-Object -First 1).OwningProcess
+    $owner = Get-CimInstance Win32_Process -Filter "ProcessId=$ownerId"
+    if ($owner.CommandLine -and $owner.CommandLine.Contains((Join-Path $repo 'smartledger\local-auth\server.mjs'))) { Stop-Process -Id $ownerId; Start-Sleep -Milliseconds 500 }
+    elseif ($owner.CommandLine -notlike '*Keycloak*' -and $owner.CommandLine -notlike '*keycloak*') { throw 'Port 8091 belongs to an unrelated service' }
 }
-Wait-Listening 8091
+& (Join-Path $PSScriptRoot 'start-identity.ps1')
+$identityDeadline = (Get-Date).AddMinutes(3)
+while (-not (Test-Listening 8091) -and (Get-Date) -lt $identityDeadline) { Start-Sleep -Milliseconds 500 }
+if (-not (Test-Listening 8091)) { throw 'Identity service failed to start; see identity.out.log and identity.err.log' }
+& (Join-Path $PSScriptRoot 'configure-local-identity.ps1')
 
 if (-not (Test-Listening 8090)) {
+    $env:SPRING_PROFILES_ACTIVE = 'local'
     $env:SPRING_DATASOURCE_URL = 'jdbc:postgresql://localhost:5432/smartledger'
     $env:SPRING_DATASOURCE_USERNAME = 'smartledger'
     $env:SPRING_DATASOURCE_PASSWORD = Get-Content 'D:\Application\PostgreSQL16\smartledger-password.txt' -Raw
@@ -43,24 +72,45 @@ if (-not (Test-Listening 8090)) {
     $env:SMARTLEDGER_OIDC_AUDIENCE = 'smartledger-api'
     $env:SMARTLEDGER_ALLOWED_ORIGINS = 'http://localhost:5173,http://localhost:5174'
     $env:SMARTLEDGER_PUBLIC_URL = 'http://localhost:5174'
+    $env:SMARTLEDGER_CREDENTIAL_KEY_FILE = Join-Path $appHome 'secrets\credential-keyring.json'
     $env:PORT = '8090'
     Start-Process -FilePath $jdk -ArgumentList @('-jar', (Join-Path $repo 'smartledger\backend\target\smartledger-api-0.1.0-SNAPSHOT.jar'), '--server.address=127.0.0.1') `
         -WorkingDirectory (Join-Path $repo 'smartledger\backend') -WindowStyle Hidden `
         -RedirectStandardOutput (Join-Path $logs 'smartledger-api.out.log') `
         -RedirectStandardError (Join-Path $logs 'smartledger-api.err.log') | Out-Null
     Remove-Item Env:SPRING_DATASOURCE_PASSWORD
+    Remove-Item Env:SMARTLEDGER_CREDENTIAL_KEY_FILE
 }
 
 if (-not (Test-Listening 8080) -and (Test-Path 'D:\Application\PostgreSQL16\pgsql\share\extension\postgis.control')) {
+    $travelAiPath=Join-Path $appHome 'secrets\travel-ai.clixml'
+    $previousTravelKey=[Environment]::GetEnvironmentVariable('TRAVEL_AI_API_KEY','Process')
+    $loadedTravelAi=$false
+    if(Test-Path -LiteralPath $travelAiPath){
+        $travelAi=Import-Clixml -LiteralPath $travelAiPath
+        $env:TRAVEL_AI_BASE_URL=$travelAi.BaseUrl
+        $env:TRAVEL_AI_MODEL=$travelAi.Model
+        $env:TRAVEL_AI_PROTOCOL=$travelAi.Protocol
+        $env:TRAVEL_AI_TOKEN_FIELD=$travelAi.TokenField
+        $env:TRAVEL_AI_AUTH_MODE=$travelAi.AuthMode
+        if($travelAi.AnthropicVersion){$env:TRAVEL_AI_ANTHROPIC_VERSION=$travelAi.AnthropicVersion}
+        $env:TRAVEL_AI_API_KEY=[Net.NetworkCredential]::new('',$travelAi.ApiKey).Password
+        $loadedTravelAi=$true
+    }
+    $env:SPRING_PROFILES_ACTIVE = 'local'
     $env:SPRING_DATASOURCE_URL = 'jdbc:postgresql://localhost:5432/travelatlas'
     $env:SPRING_DATASOURCE_USERNAME = 'travelatlas'
     $env:SPRING_DATASOURCE_PASSWORD = Get-Content 'D:\Application\PostgreSQL16\travelatlas-password.txt' -Raw
     $env:PORT = '8080'
-    Start-Process -FilePath $jdk -ArgumentList @('-jar', (Join-Path $repo 'backend\target\travelatlas-api-0.1.0-SNAPSHOT.jar'), '--server.address=127.0.0.1') `
+    try { Start-Process -FilePath $jdk -ArgumentList @('-jar', (Join-Path $repo 'backend\target\travelatlas-api-0.1.0-SNAPSHOT.jar'), '--server.address=127.0.0.1') `
         -WorkingDirectory (Join-Path $repo 'backend') -WindowStyle Hidden `
         -RedirectStandardOutput (Join-Path $logs 'wheretogo-api.out.log') `
         -RedirectStandardError (Join-Path $logs 'wheretogo-api.err.log') | Out-Null
-    Remove-Item Env:SPRING_DATASOURCE_PASSWORD
+    } finally {
+        Remove-Item Env:SPRING_DATASOURCE_PASSWORD -ErrorAction SilentlyContinue
+        if($loadedTravelAi){[Environment]::SetEnvironmentVariable('TRAVEL_AI_API_KEY',$previousTravelKey,'Process');$travelAi=$null}
+    }
+    Wait-Listening 8080
 }
 elseif (-not (Test-Listening 8080)) {
     Write-Warning 'WhereToGo API was not started because the PostgreSQL PostGIS extension is not installed yet.'
@@ -81,11 +131,14 @@ if (-not (Test-Listening 5173)) {
 }
 
 Write-Host 'SmartLedger Web: http://localhost:5174'
-Write-Host 'WhereToGo Web: http://localhost:5173'
+Write-Host 'Personal Portal: http://localhost:5173/'
+Write-Host 'WhereToGo Web: http://localhost:5173/travel/'
 Write-Host 'SmartLedger API: http://localhost:8090/actuator/health'
 Wait-Listening 8090
 Wait-Listening 5174
 Wait-Listening 5173
 if (Test-Listening 8080) { Write-Host 'WhereToGo API: http://localhost:8080/api/v1/health' }
-Write-Host 'Local OIDC: http://localhost:8091/realms/local/.well-known/openid-configuration'
+Write-Host 'Unified account: http://localhost:5173/account/'
+Write-Host 'Identity administration: http://localhost:8091/admin/'
+Write-Host 'Initial credentials: run scripts/show-initial-account.ps1 (add -Administrator for identity administration)'
 Write-Host 'Logs: D:\Application\WhereToGo\logs'

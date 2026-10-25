@@ -1,6 +1,6 @@
 import type { PlaceCategory } from '../stores/places'
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+import { apiRequest } from './client'
 
 export type PlaceRecord = {
   id: string
@@ -14,6 +14,10 @@ export type PlaceRecord = {
   coordinateSystem: string | null
   coordinateStatus: string
   coordinateSource: string | null
+  favorite?:boolean
+  visited?:boolean
+  notes?:string
+  sourceUrl?:string|null
 }
 
 export type CreatePlaceInput = {
@@ -22,40 +26,17 @@ export type CreatePlaceInput = {
   address: string
   category: PlaceCategory
   tags: string[]
+  longitude?:number|null
+  latitude?:number|null
+  coordinateSystem?:'WGS84'|null
+  favorite?:boolean
+  visited?:boolean
+  notes?:string
+  sourceUrl?:string|null
 }
 
-async function parseResponse<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    const detail = await response.text()
-    throw new Error(detail || `地点服务返回 HTTP ${response.status}`)
-  }
-  return response.json() as Promise<T>
-}
-
-export async function fetchPlaces(): Promise<PlaceRecord[]> {
-  return parseResponse<PlaceRecord[]>(await fetch(`${API_BASE_URL}/api/v1/places`))
-}
-
-export async function createPlace(input: CreatePlaceInput): Promise<PlaceRecord> {
-  return parseResponse<PlaceRecord>(await fetch(`${API_BASE_URL}/api/v1/places`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  }))
-}
-
-export async function updatePlace(id: string, input: CreatePlaceInput): Promise<PlaceRecord> {
-  return parseResponse<PlaceRecord>(await fetch(`${API_BASE_URL}/api/v1/places/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  }))
-}
-
-export async function deletePlace(id: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/places/${encodeURIComponent(id)}`, { method: 'DELETE' })
-  if (!response.ok) {
-    const detail = await response.text()
-    throw new Error(detail || `地点服务返回 HTTP ${response.status}`)
-  }
-}
+export async function fetchPlaces(): Promise<PlaceRecord[]> { return apiRequest('/api/v1/places') }
+export async function createPlace(input: CreatePlaceInput): Promise<PlaceRecord> { return apiRequest('/api/v1/places',{method:'POST',body:JSON.stringify(input)}) }
+export async function updatePlace(id: string,input: CreatePlaceInput): Promise<PlaceRecord> { return apiRequest(`/api/v1/places/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify(input)}) }
+export async function deletePlace(id: string): Promise<void> { return apiRequest(`/api/v1/places/${encodeURIComponent(id)}`,{method:'DELETE'}) }
+export async function createPlacesBatch(input:CreatePlaceInput[]){return apiRequest<PlaceRecord[]>('/api/v1/places/batch',{method:'POST',body:JSON.stringify(input)})}

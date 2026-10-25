@@ -4,6 +4,10 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 public class TripStopDto {
+    private java.math.BigDecimal estimatedCost;
+    private boolean completed;
+    public java.math.BigDecimal getEstimatedCost(){return estimatedCost;} public void setEstimatedCost(java.math.BigDecimal v){estimatedCost=v;}
+    public boolean isCompleted(){return completed;} public void setCompleted(boolean v){completed=v;}
     private UUID id;
     private UUID placeId;
     private LocalDate dayDate;

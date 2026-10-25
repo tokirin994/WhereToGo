@@ -9,6 +9,10 @@ import ts from 'typescript'
 import * as ledger from '../src/ledger.ts'
 import { readLocalSnapshot, writeLocalSnapshot } from '../src/storage.ts'
 
+// Extract the dependency-free production fingerprint without Node resolving Vite extensionless imports.
+const syncAst=ts.createSourceFile('sync.ts',fs.readFileSync(new URL('../src/cloudSync.ts',import.meta.url),'utf8'),ts.ScriptTarget.Latest,true)
+const fingerprintNode=syncAst.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='fingerprint')
+const fingerprint=vm.runInNewContext('('+ts.transpileModule(fingerprintNode.getText(syncAst).replace(/^export /,''),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText+')')
 const source = fs.readFileSync(new URL('../src/LedgerWorkspace.vue', import.meta.url), 'utf8')
 const script = source.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1]
 const ast = ts.createSourceFile('workspace.ts', script, ts.ScriptTarget.Latest, true)
@@ -28,7 +32,7 @@ function fixture() {
   return { snapshot, root, child }
 }
 function handlers(snapshot, confirm = true) {
-  const context = vm.createContext({ ...ledger, crypto, Date, Error, console,
+  const context = vm.createContext({ ...ledger, fingerprint, crypto, Date, Error, console,
     snapshot: ref(snapshot), error: ref(''), editingId: ref(null), editingBookId: ref('auto'),
     entryDraft: ref({}), bookDraft: ref({}), entryOpen: ref(true), bookOpen: ref(true),
     activeTab: ref('entry'), entryReturnTab: ref('transactions'),
@@ -36,6 +40,7 @@ function handlers(snapshot, confirm = true) {
     savingEntry: ref(false), savingBook: ref(false), bookFormError: ref(''),
     entryExplicitBooks: ref(false), entrySplitSettings: ref({}), editingTransaction: ref(undefined),
     entryInstallmentEnabled: ref(false), entryInstallmentStartDate: ref('2026-10-22'),
+    entryLinkedSource:ref(undefined),entryOffsetOriginalState:ref(''),entryRecordState:()=>'',entryOffsetEdits:ref([]),entryOffsetDrafts:ref([]),entryClearOffsetIds:ref([]),entryOffsetManager:ref({confirmLimit:async()=> 'keep',confirmClearAll:async()=>true}),
     bookRuleMode: ref('categories'), bookKeepExisting: ref(true), bookCollectMatching: ref(true),
     savingCandidates: ref(new Set()), candidateExplicitBooks: ref(false), candidateSplitSettings: ref({}),
     candidateError: ref(''), selectedCandidateIds: ref([]),
@@ -243,7 +248,7 @@ function handlers(snapshot, confirm = true) {
 }
 
 const report = {
-  date: '2026-10-24', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  date: new Date().toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   method: 'Execute current TypeScript core and extracted Vue handlers with isolated in-memory fixtures; native expectations from local Swift source. IndexedDB uses fake-indexeddb. No browser or real cloud login.',
   counts: { total: results.length, matches: results.filter(r => r.status === 'matches').length,
     differences: results.filter(r => r.status === 'difference').length }, results,

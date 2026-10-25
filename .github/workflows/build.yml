@@ -1,0 +1,41 @@
+name: Build applications
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        directory: [frontend, smartledger/frontend]
+    defaults:
+      run:
+        working-directory: ${{ matrix.directory }}
+    env:
+      VITE_LOCAL_MOCK_AUTH: 'false'
+      VITE_OIDC_AUTHORITY: https://identity.example.com/realms/personal
+      VITE_SMARTLEDGER_API_URL: https://ledger-api.example.com
+      VITE_SMARTLEDGER_PUBLIC_URL: https://ledger.example.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: npm run build
+      - run: npm audit --audit-level=high
+  backend:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        directory: [backend, smartledger/backend]
+    defaults:
+      run:
+        working-directory: ${{ matrix.directory }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+      - run: mvn -B -DskipTests package

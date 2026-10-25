@@ -5,6 +5,13 @@
 !.env.*.example
 *.pem
 *.key
+.local/
+*.clixml
+*.agekey
+*.dump
+*.tar.age*
+**/rclone.conf
+**/credential-keyring.json
 
 # Dependencies
 node_modules/

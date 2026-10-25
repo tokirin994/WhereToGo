@@ -1,0 +1,186 @@
+name: wheretogo-production
+
+x-service: &service
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: local
+    options: {max-size: '10m', max-file: '3'}
+  stop_grace_period: 45s
+
+x-api: &api
+  <<: *service
+  read_only: true
+  cap_drop: [ALL]
+  tmpfs: ['/tmp:size=128m,mode=1777']
+  mem_limit: 768m
+
+services:
+  db:
+    <<: *service
+    build: {context: ., dockerfile: Postgres.Dockerfile}
+    image: wheretogo-postgis:pg16
+    mem_limit: 2g
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    command: [postgres, -c, shared_buffers=256MB, -c, max_connections=60, -c, password_encryption=scram-sha-256]
+    secrets: [postgres-password, travel-password, travel-migration-password, ledger-password, ledger-migration-password, identity-password]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-databases.sh:/docker-entrypoint-initdb.d/10-databases.sh:ro
+    networks: [travel-data, ledger-data, identity-data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U postgres -d postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 40
+    # Deliberately no host port: databases are reachable only through private container networks.
+
+  identity:
+    <<: *service
+    build: {context: ../.., dockerfile: deploy/production/Identity.Dockerfile}
+    image: wheretogo-identity:kc26.8.1
+    mem_limit: 1536m
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/identity
+      KC_DB_USERNAME: identity_owner
+      KC_DB_POOL_INITIAL_SIZE: '1'
+      KC_DB_POOL_MIN_SIZE: '1'
+      KC_DB_POOL_MAX_SIZE: '5'
+      KC_HOSTNAME: https://${IDENTITY_HOST:?Generate production settings first}
+      KC_HOSTNAME_STRICT: 'true'
+      KC_HTTP_ENABLED: 'true'
+      KC_PROXY_HEADERS: xforwarded
+      KC_PROXY_TRUSTED_ADDRESSES: 172.29.231.2/32
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${IDENTITY_ADMIN_USERNAME:-bootstrap-admin}
+      PORTAL_PUBLIC_URL: ${PORTAL_ORIGIN:?Set the public portal origin}
+      JAVA_OPTS_APPEND: -Xms128m -Xmx768m
+    entrypoint: [/bin/bash, -ec]
+    command:
+      - |
+        export KC_DB_PASSWORD="$$(</run/secrets/identity-password)"
+        export KC_BOOTSTRAP_ADMIN_PASSWORD="$$(</run/secrets/identity-admin-password)"
+        exec /opt/keycloak/bin/kc.sh start --optimized --import-realm
+    secrets: [identity-password, identity-admin-password]
+    volumes:
+      - ../../.local/production/identity-import:/opt/keycloak/data/import:ro
+      - identity-data:/opt/keycloak/data
+    networks: [edge, identity-data]
+    depends_on:
+      db: {condition: service_healthy}
+
+  travel-api:
+    <<: *api
+    build: {context: ../../backend}
+    image: wheretogo-travel-api:production
+    environment:
+      SPRING_CONFIG_IMPORT: configtree:/run/secrets/
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/travelatlas
+      SPRING_DATASOURCE_USERNAME: travel_app
+      SPRING_FLYWAY_URL: jdbc:postgresql://db:5432/travelatlas
+      SPRING_FLYWAY_USER: travel_migrator
+      APP_OIDC_ISSUER: https://${IDENTITY_HOST}/realms/${IDENTITY_REALM:-personal}
+      APP_OIDC_AUDIENCE: wheretogo-api
+      API_OIDC_JWK_SET_URI: https://${IDENTITY_HOST}/realms/${IDENTITY_REALM:-personal}/protocol/openid-connect/certs
+      APP_CORS_ALLOWED_ORIGINS: ${PORTAL_ORIGIN}
+      API_ALLOWED_SUBJECTS: ${API_ALLOWED_SUBJECTS:?Set account subjects or the initial deny-all placeholder}
+      API_ALLOW_ANY_AUTHENTICATED_USER: 'false'
+      API_DOCS_ENABLED: 'false'
+      DB_POOL_SIZE: '4'
+      HTTP_MAX_THREADS: '24'
+      SERVER_SHUTDOWN: graceful
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx384m -Djava.net.preferIPv4Stack=true
+      TRAVEL_AI_BASE_URL: ${TRAVEL_AI_BASE_URL:-}
+      TRAVEL_AI_MODEL: ${TRAVEL_AI_MODEL:-}
+      TRAVEL_AI_PROTOCOL: ${TRAVEL_AI_PROTOCOL:-chat-completions}
+      TRAVEL_AI_TOKEN_FIELD: ${TRAVEL_AI_TOKEN_FIELD:-max_tokens}
+      TRAVEL_AI_AUTH_MODE: ${TRAVEL_AI_AUTH_MODE:-api-key}
+      TRAVEL_AI_ANTHROPIC_VERSION: ${TRAVEL_AI_ANTHROPIC_VERSION:-2023-06-01}
+    secrets:
+      - {source: travel-password, target: spring.datasource.password}
+      - {source: travel-migration-password, target: spring.flyway.password}
+      - {source: travel-ai-key, target: travel.ai.api-key}
+    networks: [edge, travel-data]
+    depends_on:
+      db: {condition: service_healthy}
+
+  ledger-api:
+    <<: *api
+    build: {context: ../../smartledger/backend}
+    image: wheretogo-ledger-api:production
+    environment:
+      SPRING_CONFIG_IMPORT: configtree:/run/secrets/
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/smartledger
+      SPRING_DATASOURCE_USERNAME: ledger_app
+      SPRING_FLYWAY_URL: jdbc:postgresql://db:5432/smartledger
+      SPRING_FLYWAY_USER: ledger_migrator
+      SMARTLEDGER_OIDC_ISSUER: https://${IDENTITY_HOST}/realms/${IDENTITY_REALM:-personal}
+      SMARTLEDGER_OIDC_AUDIENCE: smartledger-api
+      API_OIDC_JWK_SET_URI: https://${IDENTITY_HOST}/realms/${IDENTITY_REALM:-personal}/protocol/openid-connect/certs
+      SMARTLEDGER_ALLOWED_ORIGINS: ${PORTAL_ORIGIN},${LEDGER_ORIGIN}
+      SMARTLEDGER_PUBLIC_URL: ${LEDGER_ORIGIN}
+      API_ALLOWED_SUBJECTS: ${API_ALLOWED_SUBJECTS}
+      API_ALLOW_ANY_AUTHENTICATED_USER: 'false'
+      SMARTLEDGER_CREDENTIAL_KEY_FILE: /run/secrets/credential-keyring.json
+      DB_POOL_SIZE: '4'
+      HTTP_MAX_THREADS: '24'
+      SERVER_SHUTDOWN: graceful
+      PORT: '8090'
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx384m -Djava.net.preferIPv4Stack=true
+    secrets:
+      - {source: ledger-password, target: spring.datasource.password}
+      - {source: ledger-migration-password, target: spring.flyway.password}
+      - {source: credential-keyring, target: credential-keyring.json}
+    networks: [edge, ledger-data]
+    depends_on:
+      db: {condition: service_healthy}
+
+  gateway:
+    <<: *service
+    image: caddy:2.11.7-alpine
+    mem_limit: 256m
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:?Set the certificate contact email}
+      IDENTITY_HOST: ${IDENTITY_HOST}
+      TRAVEL_API_HOST: ${TRAVEL_API_HOST}
+      LEDGER_API_HOST: ${LEDGER_API_HOST}
+      ADMIN_ALLOWED_CIDRS: ${ADMIN_ALLOWED_CIDRS:?Restrict the identity admin console to your own IP}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    tmpfs: ['/tmp:size=32m,mode=1777']
+    ports: ['80:80', '443:443']
+    networks:
+      edge: {ipv4_address: 172.29.231.2}
+
+networks:
+  edge:
+    ipam:
+      config: [{subnet: 172.29.231.0/24}]
+  travel-data: {internal: true}
+  ledger-data: {internal: true}
+  identity-data: {internal: true}
+
+volumes:
+  postgres-data:
+  identity-data:
+  caddy-data:
+  caddy-config:
+
+secrets:
+  postgres-password: {file: ../../.local/production/secrets/postgres-password}
+  travel-password: {file: ../../.local/production/secrets/travel-password}
+  travel-migration-password: {file: ../../.local/production/secrets/travel-migration-password}
+  ledger-password: {file: ../../.local/production/secrets/ledger-password}
+  ledger-migration-password: {file: ../../.local/production/secrets/ledger-migration-password}
+  identity-password: {file: ../../.local/production/secrets/identity-password}
+  identity-admin-password: {file: ../../.local/production/secrets/identity-admin-password}
+  credential-keyring: {file: ../../.local/production/secrets/credential-keyring.json}
+  travel-ai-key: {file: ../../.local/production/secrets/travel-ai-key}

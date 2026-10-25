@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@org.springframework.validation.annotation.Validated
 @RequestMapping("/api/v1/places")
 public class PlaceController {
     private final PlaceService service;
@@ -41,6 +42,7 @@ public class PlaceController {
     }
     @PatchMapping("/{id}")
     public PlaceDto update(@PathVariable UUID id, @Valid @RequestBody PlaceRequest request) { return service.update(id, request); }
+    @PostMapping("/batch") public List<PlaceDto> batch(@Valid @RequestBody @javax.validation.constraints.NotNull @javax.validation.constraints.Size(min=1,max=100) List<@javax.validation.constraints.NotNull @Valid PlaceRequest> requests){return service.createBatch(requests);}
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable UUID id) { service.delete(id); return ResponseEntity.noContent().build(); }
 }

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 withDefaults(defineProps<{ name: string; size?: number }>(), { size: 18 })
 const paths: Record<string,string[]> = {
+  home:['M3 10 12 3l9 7v11h-6v-7H9v7H3V10z'],
+  compass:['M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0','m16 8-3 5-5 3 3-5 5-3z'],
   image:['M3 3h18v18H3zM3 17l6-6 4 4 3-3 5 5','M9 7h.01'],
   file:['M14 2H5v20h14V7l-5-5zM14 2v5h5M8 12h8M8 16h6'],
   table:['M3 4h18v16H3zM3 9h18M3 14h18M9 4v16M15 4v16'],

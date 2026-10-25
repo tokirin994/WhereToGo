@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.UUID;
 
 public class TripDto {
+    private TripPreferences preferences;
+    public TripPreferences getPreferences(){return preferences;} public void setPreferences(TripPreferences value){preferences=value;}
     private UUID id;
     private String name;
     private String destination;

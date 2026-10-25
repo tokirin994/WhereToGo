@@ -1,0 +1,45 @@
+# Run behind an HTTPS reverse proxy. No public database port or public Keycloak HTTP binding.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: identity
+      POSTGRES_USER: identity
+      POSTGRES_PASSWORD: ${IDENTITY_DB_PASSWORD:?Configure an identity database secret}
+    volumes:
+      - identity-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U identity -d identity"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  identity:
+    image: quay.io/keycloak/keycloak:26.8.1
+    command: ["start", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/identity
+      KC_DB_USERNAME: identity
+      KC_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:?Configure an identity database secret}
+      KC_HOSTNAME: ${IDENTITY_PUBLIC_URL:?Set the HTTPS public identity URL}
+      KC_HTTP_ENABLED: 'true'
+      KC_HTTP_PORT: 8080
+      KC_PROXY_HEADERS: xforwarded
+      KC_PROXY_TRUSTED_ADDRESSES: ${IDENTITY_PROXY_ADDRESSES:?Set trusted reverse proxy CIDRs}
+      KC_DB_POOL_INITIAL_SIZE: 1
+      KC_DB_POOL_MIN_SIZE: 1
+      KC_DB_POOL_MAX_SIZE: 4
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${IDENTITY_ADMIN_USERNAME:-identity-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${IDENTITY_ADMIN_PASSWORD:?Set a strong bootstrap admin secret}
+      JAVA_OPTS_APPEND: '-Xms128m -Xmx512m'
+      PORTAL_PUBLIC_URL: ${PORTAL_ORIGIN:?Set the public portal HTTPS origin}
+    volumes:
+      - ${IDENTITY_IMPORT_DIR:?Generate a production realm configuration}:/opt/keycloak/data/import:ro
+      - ./themes/personal:/opt/keycloak/themes/personal:ro
+    ports:
+      - '127.0.0.1:8091:8080'
+    depends_on:
+      db:
+        condition: service_healthy
+volumes:
+  identity-db:

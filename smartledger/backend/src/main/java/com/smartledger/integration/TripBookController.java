@@ -25,9 +25,11 @@ public class TripBookController {
     private final JdbcTemplate jdbc;
     private final URI publicUrl;
 
-    public TripBookController(JdbcTemplate jdbc, @Value("${smartledger.public-url}") URI publicUrl) {
+    public TripBookController(JdbcTemplate jdbc, @Value("${smartledger.public-url}") URI publicUrl,com.smartledger.security.ApiPolicy policy) {
         this.jdbc = jdbc;
         this.publicUrl = publicUrl;
+        boolean loopback="localhost".equals(publicUrl.getHost())||"127.0.0.1".equals(publicUrl.getHost())||"[::1]".equals(publicUrl.getHost());
+        if(publicUrl.getHost()==null||publicUrl.getUserInfo()!=null||publicUrl.getFragment()!=null||publicUrl.getQuery()!=null||(!"https".equals(publicUrl.getScheme())&&!(policy.isLocalDevelopment()&&loopback&&"http".equals(publicUrl.getScheme()))))throw new IllegalStateException("SmartLedger public URL must use HTTPS outside local development");
     }
 
     @PostMapping("/{tripId}/open")
@@ -49,7 +51,7 @@ public class TripBookController {
             "external_destination = EXCLUDED.external_destination, " +
             "external_trip_starts_on = EXCLUDED.external_trip_starts_on, " +
             "external_trip_ends_on = EXCLUDED.external_trip_ends_on, updated_at = now() RETURNING id",
-            UUID.class, UUID.randomUUID(), userId, request.getTripName() + " · 旅行账本", tripId,
+            UUID.class, UUID.randomUUID(), userId, request.getTripName().substring(0,request.getTripName().offsetByCodePoints(0,Math.min(153,request.getTripName().codePointCount(0,request.getTripName().length())))) + " · 旅行账本", tripId,
             request.getTripName(), request.getDestination(), request.getStartsOn(), request.getEndsOn(),
             request.getStartsOn(), request.getEndsOn());
         return new OpenTripBookResponse(bookId, publicUrl.resolve("/books/" + bookId).toString());
