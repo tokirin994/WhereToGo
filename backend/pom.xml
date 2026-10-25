@@ -16,7 +16,7 @@
     <java.version>1.8</java.version>
     <mybatis-spring-boot.version>2.3.2</mybatis-spring-boot.version>
     <springdoc.version>1.8.0</springdoc.version>
-    <flyway.version>9.22.3</flyway.version>
+    <flyway.version>13.11.1</flyway.version>
   </properties>
   <dependencies>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-security</artifactId></dependency>
