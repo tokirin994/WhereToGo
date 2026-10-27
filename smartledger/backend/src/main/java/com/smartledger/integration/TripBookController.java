@@ -54,7 +54,7 @@ public class TripBookController {
             UUID.class, UUID.randomUUID(), userId, request.getTripName().substring(0,request.getTripName().offsetByCodePoints(0,Math.min(153,request.getTripName().codePointCount(0,request.getTripName().length())))) + " · 旅行账本", tripId,
             request.getTripName(), request.getDestination(), request.getStartsOn(), request.getEndsOn(),
             request.getStartsOn(), request.getEndsOn());
-        return new OpenTripBookResponse(bookId, publicUrl.resolve("/books/" + bookId).toString());
+        return new OpenTripBookResponse(bookId, URI.create(publicUrl.toString().replaceAll("/+$", "") + "/").resolve("books/" + bookId).toString());
     }
 
     public static class OpenTripBookRequest {

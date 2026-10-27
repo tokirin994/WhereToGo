@@ -2,10 +2,13 @@ import { shallowRef } from 'vue'
 import type { User } from 'oidc-client-ts'
 import { createIdentitySession } from './identitySession'
 
+export const registrationEnabled=import.meta.env.VITE_REGISTRATION_ENABLED!=='false'
 export const localMockAuth=import.meta.env.VITE_LOCAL_MOCK_AUTH==='true'
 const authority=import.meta.env.VITE_OIDC_AUTHORITY||''
 export const currentUser=shallowRef<User|null>(null)
 export const authError=shallowRef('')
+export const authAction=shallowRef<'login'|'register'|null>(null)
+window.addEventListener('pageshow',()=>{authAction.value=null})
 let initialize:Promise<void>|undefined
 let mockExpiresAt=0
 let cacheIdentity='anonymous'
@@ -27,8 +30,18 @@ export async function initializeAuth(){
   initialize=(async()=>{authError.value='';try{if(localMockAuth)await mockSession();else await identity.initialize()}catch(cause){authError.value=cause instanceof Error?cause.message:'登录初始化失败'}})()
   return initialize
 }
-export async function signIn(returnTo?:string){authError.value='';try{await identity.signIn(returnTo)}catch(cause){authError.value=cause instanceof Error?cause.message:'无法打开登录服务'}}
-export async function register(returnTo?:string){authError.value='';try{await identity.register(returnTo)}catch(cause){authError.value=cause instanceof Error?cause.message:'无法打开注册页面'}}
+async function openIdentity(action:'login'|'register',returnTo?:string){
+  if(authAction.value)return
+  authError.value='';authAction.value=action
+  try{
+    if(action==='register'){
+      if(!registrationEnabled)throw new Error('当前部署未开放注册，请联系管理员')
+      await identity.register(returnTo)
+    }else await identity.signIn(returnTo)
+  }catch(cause){authError.value=cause instanceof Error?cause.message:'账号服务暂时不可用，请重试';authAction.value=null}
+}
+export async function signIn(returnTo?:string){await openIdentity('login',returnTo)}
+export async function register(returnTo?:string){await openIdentity('register',returnTo)}
 export async function signOut(){try{if(localMockAuth){currentUser.value=null;window.location.assign('/');return}await identity.signOut()}catch(cause){authError.value=cause instanceof Error?cause.message:'统一退出失败'}}
 export async function accessToken(){
   await initializeAuth()

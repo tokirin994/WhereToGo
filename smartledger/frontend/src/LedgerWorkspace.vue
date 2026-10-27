@@ -28,7 +28,7 @@ import ImportSourcePreview from './ImportSourcePreview.vue'
 import PaymentChannelSettings from './PaymentChannelSettings.vue'
 import AppSwitcher from './AppSwitcher.vue'
 import ApiSecurityPanel from './ApiSecurityPanel.vue'
-import { portalUrl, travelUrl } from './appLinks'
+import { portalUrl, travelUrl, appBasePath, ledgerOnly } from './appLinks'
 import { authorizedRequest } from './apiClient'
 import { defaultTransactionFilters, type TransactionFilters } from './ledgerViewModels'
 
@@ -373,7 +373,7 @@ async function manageInstallment(action:'cancel'|'payoff'){
 }
 async function deleteBook(book:Book){if(!window.confirm(`删除账本“${book.name}”？流水会保留，只移除这个账本的关联。`))return;snapshot.value.books=snapshot.value.books.filter(item=>item.id!==book.id);snapshot.value.transactions.forEach(tx=>{tx.bookIds=tx.bookIds.filter(id=>id!==book.id);if(tx.ledgerSplitSettings)delete tx.ledgerSplitSettings[book.id]});snapshot.value.budgets=snapshot.value.budgets.filter(budget=>budget.bookId!==book.id);if(selectedBookId.value===book.id)selectedBookId.value=null;await persist()}
 async function toggleBookPinned(book:Book){book.isPinned=!book.isPinned;await persist();notify(book.isPinned?'账本已置顶':'已取消置顶')}
-function returnToBooks(){selectedBookId.value=null;if(bookId.value){bookId.value=null;window.history.replaceState({},document.title,'/')}activeTab.value='books'}
+function returnToBooks(){selectedBookId.value=null;if(bookId.value){bookId.value=null;window.history.replaceState({},document.title,appBasePath)}activeTab.value='books'}
 const bookDetailActions=computed<MenuAction[]>(()=>selectedBook.value?[
   {id:'settings',label:'账本设置',icon:'edit'},
   {id:'pin',label:selectedBook.value.isPinned?'取消置顶':'置顶账本',icon:'pin'},
@@ -505,7 +505,7 @@ async function saveSelectedCandidates(){
 }
 async function generateDemo(){if(!window.confirm('将在当前账本中加入一批可删除的模拟流水，继续吗？'))return;const expenseCategories=flatCategories.value.filter(item=>item.flowType==='expense');const book=snapshot.value.books[0];for(const [index,title] of ['早餐','地铁出行','超市采购','咖啡','电影票','工资到账','水电缴费','打车','水果'].entries()){const category=expenseCategories[index%expenseCategories.length];const date=new Date();date.setDate(date.getDate()-index);snapshot.value.transactions.push(...createTransaction(snapshot.value,{title,amount:[18,5,86,24,58,8500,126,22,35][index],kind:title==='工资到账'?'income':'expense',happenedAt:date.toISOString(),categoryId:title==='工资到账'?null:category.id,bookIds:book?[book.id]:[],paymentMethod:index?'微信':'银行卡',note:'模拟数据',installmentMonths:1}))}await persist();notify('已生成模拟流水')}
 async function chooseBackground(event:Event){const file=(event.target as HTMLInputElement).files?.[0];if(!file)return;if(file.size>5*1024*1024){error.value='背景图片不能超过 5 MB';return}const reader=new FileReader();reader.onload=async()=>{snapshot.value.settings.backgroundDataUrl=String(reader.result);await persist()};reader.readAsDataURL(file)}
-function setTab(tab:typeof activeTab.value){if(savingEntry.value||savingCandidates.value.size)return false;if(activeTab.value==='entry'&&entryOpen.value&&entryBaseline.value!==entryEditorState()&&!window.confirm('当前流水尚未保存，放弃修改并离开吗？'))return false;if(bookId.value){selectedBookId.value=bookId.value;window.history.replaceState({},document.title,'/');bookId.value=null}if(activeTab.value==='entry'&&tab!=='entry')entryOpen.value=false;activeTab.value=tab;if(tab!=='more')morePage.value='menu';if(tab==='entry')openEntry();return true}
+function setTab(tab:typeof activeTab.value){if(savingEntry.value||savingCandidates.value.size)return false;if(activeTab.value==='entry'&&entryOpen.value&&entryBaseline.value!==entryEditorState()&&!window.confirm('当前流水尚未保存，放弃修改并离开吗？'))return false;if(bookId.value){selectedBookId.value=bookId.value;window.history.replaceState({},document.title,appBasePath);bookId.value=null}if(activeTab.value==='entry'&&tab!=='entry')entryOpen.value=false;activeTab.value=tab;if(tab!=='more')morePage.value='menu';if(tab==='entry')openEntry();return true}
 function navigateTab(id: string) {
   if (!setTab(id as typeof activeTab.value)) return
   // Navigation always opens the section root, including a second tap on the active item.
@@ -606,7 +606,7 @@ watch(()=>[snapshot.value.settings.cloudSyncEnabled,snapshot.value.settings.midn
         <label class="feature-check-row"><input v-model="bookDraft.isPinned" type="checkbox"/><span>置顶这个账本</span></label><p v-if="bookFormError" class="feature-error" role="alert">{{ bookFormError }}</p><footer class="feature-form-footer"><button type="button" class="feature-button" :disabled="savingBook" @click="bookOpen=false">取消</button><button class="feature-button accent" :disabled="savingBook">{{ savingBook?'保存中…':'保存账本' }}</button></footer></form></div>
       <div v-if="budgetOpen" class="modal-shade" @click.self="budgetOpen=false"><form class="modal-card" @submit.prevent="createBudget"><header><h2>{{ editingBudgetId?'编辑预算':'新建预算' }}</h2><button type="button" @click="budgetOpen=false">×</button></header><label>预算名称<input v-model.trim="budgetDraft.name" required/></label><label>限额<input v-model="budgetDraft.limitAmount" type="number" min="0.01" step="0.01" required/></label><label>周期<select v-model="budgetDraft.periodType"><option value="monthly">按月</option><option value="range">按起止时间</option></select></label><div v-if="budgetDraft.periodType==='monthly'" class="form-grid"><label>年份<input v-model.number="budgetDraft.year" type="number"/></label><label>月份<input v-model.number="budgetDraft.month" type="number" min="1" max="12"/></label></div><div v-else class="form-grid"><label>开始<input v-model="budgetDraft.startDate" type="date"/></label><label>结束<input v-model="budgetDraft.endDate" type="date"/></label></div><CategoryPicker v-model="budgetDraft.categoryIds" title="分类范围" placeholder="全部支出分类" :categories="flatCategories" flow-type="expense" :multiple="true" :appearance-mode="snapshot.settings.appearanceMode" /><label>账本<select v-model="budgetDraft.bookId"><option value="">全部账本</option><option v-for="book in snapshot.books" :key="book.id" :value="book.id">{{ book.name }}</option></select></label><footer><button type="button" class="secondary-button" @click="budgetOpen=false">取消</button><button class="primary-button">保存预算</button></footer></form></div>
       <p v-if="toast" class="toast">{{ toast }}</p>
-      <footer class="workspace-footer"><span>本地优先 · {{ snapshot.transactions.length }} 笔流水 · {{ snapshot.books.length }} 本账</span><nav class="workspace-app-links" aria-label="其他应用"><a :href="portalUrl">个人门户</a><a :href="travelUrl">打开 WhereToGo</a></nav></footer>
+      <footer class="workspace-footer"><span>本地优先 · {{ snapshot.transactions.length }} 笔流水 · {{ snapshot.books.length }} 本账</span><nav v-if="!ledgerOnly" class="workspace-app-links" aria-label="其他应用"><a :href="portalUrl">个人门户</a><a :href="travelUrl">打开 WhereToGo</a></nav></footer>
     </section>
   </main>
 </template>

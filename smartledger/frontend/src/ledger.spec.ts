@@ -105,7 +105,7 @@ describe('SmartLedger core data and account rules', () => {
     const incoming=parseReceiptText('转账成功\n收款方：张三\n收入金额：500.00\n备注：朋友转账')
     expect(incoming.kind).toBe('income')
     const meituan=parseReceiptText('消费记录详情\n已支付\n¥20.00\n企业订单\n订单时间\n2026-10-08 17:57:55\n消费商家\n云南味道\n业务场景\n工作餐')
-    expect(meituan).toMatchObject({amount:20,kind:'expense',title:'云南味道',merchant:'云南味道',categoryPath:['餐饮','工作餐']})
+    expect(meituan).toMatchObject({amount:20,kind:'expense',title:'云南味道',merchant:'云南味道',categoryPath:['餐饮','晚餐'],offsetEnabled:true,offsetRatio:100,paymentMethod:'公司补贴'})
   })
 
   it('extracts original price and combined discounts from detail screenshots', () => {

@@ -1,0 +1,83 @@
+{
+    admin off
+}
+
+{$PUBLIC_HOST} {
+    encode zstd gzip
+    header {
+        -Server
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        Permissions-Policy "camera=(self), microphone=(), geolocation=(self)"
+        X-Frame-Options SAMEORIGIN
+    }
+    @identity path /identity/realms/personal/* /identity/resources/*
+    handle @identity {
+        reverse_proxy identity:8080 {
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-Proto https
+            header_up X-Forwarded-Port 443
+            header_up -X-Real-IP
+        }
+    }
+    @private_identity path /identity /identity/*
+    handle @private_identity {
+        respond "Not found" 404
+    }
+    @travel path /travel-api/api/v1/*
+    handle @travel {
+        request_body {
+            max_size 1MB
+        }
+        uri strip_prefix /travel-api
+        reverse_proxy travel-api:8080 {
+            header_up -X-Forwarded-For
+            header_up -X-Forwarded-Host
+            header_up -X-Forwarded-Proto
+            header_up -X-Forwarded-Port
+            header_up -X-Real-IP
+        }
+    }
+    @ledger path /ledger-api/api/v1/* /ledger-api/actuator/health
+    handle @ledger {
+        request_body {
+            max_size 11MB
+        }
+        uri strip_prefix /ledger-api
+        reverse_proxy ledger-api:8090 {
+            header_up -X-Forwarded-For
+            header_up -X-Forwarded-Host
+            header_up -X-Forwarded-Proto
+            header_up -X-Forwarded-Port
+            header_up -X-Real-IP
+        }
+    }
+    @private_files path /travel-api /travel-api/* /ledger-api /ledger-api/* /_headers /_redirects /ledger/_headers /ledger/_redirects
+    handle @private_files {
+        respond "Not found" 404
+    }
+    handle /ledger {
+        redir /ledger/ 308
+    }
+    handle_path /ledger/* {
+        root * /srv/ledger
+        header Content-Security-Policy "__LEDGER_CSP__"
+        header Cache-Control no-cache
+        @assets path /assets/* /pdfjs/*
+        header @assets Cache-Control "public, max-age=31536000, immutable"
+        try_files {path} /index.html
+        file_server
+    }
+    handle {
+        root * /srv/portal
+        header Content-Security-Policy "__PORTAL_CSP__"
+        header Cache-Control no-cache
+        @assets path /assets/*
+        header @assets Cache-Control "public, max-age=31536000, immutable"
+        try_files {path} /index.html
+        file_server
+    }
+}
+# Access logging is not enabled: callback codes and financial payloads stay out of access logs.

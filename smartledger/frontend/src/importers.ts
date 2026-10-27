@@ -187,6 +187,19 @@ export function parseReceiptTextBatch(rawText: string): ImportCandidate[] {
     const orders = parseMeituanOrderList(lines)
     if (orders.length) return orders
   }
+  // Text/PDF bill imports may contain explicitly dated rows. Image recognition
+  // deliberately calls parseReceiptText directly so one screenshot stays one receipt.
+  const signedTitle=/^(.+?)\s*([+-]\s*\d[\d,]*\.\d{2})$/
+  if(/搜索交易记录|账单列表/.test(normalized)){
+    const starts=lines.map((line,index)=>signedTitle.test(line)?index:-1).filter(index=>index>=0)
+    const rows=starts.map((start,index)=>{
+      const chunk=lines.slice(start,starts[index+1]??lines.length),match=chunk[0]!.match(signedTitle)!
+      return parseReceiptText([match[1],...chunk.slice(1),`交易金额：${match[2]}`].join('\n'))
+    })
+    if(rows.length>1&&rows.every(row=>row.amount!=null&&row.happenedAt))return rows
+  }
+  const datedRows=[...lines.join('\n').matchAll(/^([^\n]+)\n([^\n]+)\n(\d{4}[-/]\d{1,2}[-/]\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?)\n([+-]\s*\d[\d,]*\.\d{2})(?=\n|$)/gm)]
+  if(datedRows.length>1)return datedRows.map(row=>parseReceiptText(`${row[1]}\n${row[2]}\n交易时间：${row[3]}\n交易金额：${row[4]}`))
   // A screenshot is one receipt by default. Splitting on every OCR'd amount
   // mistakes original price, discount, card balance, and dates for extra rows.
   // Multi-order extraction is reserved for an explicitly recognized order list.
@@ -228,10 +241,11 @@ function candidateQuality(candidates: ImportCandidate[]): number {
 }
 
 export async function recognizeImage(file: File, onProgress?: (progress: OcrProgress) => void): Promise<ImportCandidate[]> {
+  const assetBase = import.meta.env.BASE_URL || '/'
   const worker = await createWorker('chi_sim+eng', 1, {
-    workerPath: '/tesseract/worker.min.js',
-    corePath: '/tesseract/tesseract-core-simd-lstm.wasm.js',
-    langPath: '/tesseract/lang',
+    workerPath: `${assetBase}tesseract/worker.min.js`,
+    corePath: `${assetBase}tesseract/tesseract-core-simd-lstm.wasm.js`,
+    langPath: `${assetBase}tesseract/lang`,
     logger: event => onProgress?.({ status: event.status, progress: event.progress }),
   })
   try {

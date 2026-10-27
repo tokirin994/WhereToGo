@@ -2,6 +2,13 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App.vue'
+import { demoPlaces } from './stores/places'
+
+// Account isolation removed implicit demo data. Seed this test's account explicitly.
+vi.mock('./auth',async()=>{const {ref}=await import('vue');return {
+  currentUser:ref({profile:{sub:'map-workspace-test'}}),accessToken:vi.fn(async()=>'test-token'),signOut:vi.fn(),
+  travelCacheKey:(name:string)=>name==='places'?'travelatlas.demo.places':`map-test:${name}`,
+}})
 
 describe('TravelAtlas map workspace', () => {
   let wrapper: VueWrapper
@@ -9,6 +16,7 @@ describe('TravelAtlas map workspace', () => {
 
   beforeEach(() => {
     localStorage.clear()
+    localStorage.setItem('travelatlas.demo.places',JSON.stringify(demoPlaces))
     fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method === 'POST') {
         const body = JSON.parse(String(init.body))

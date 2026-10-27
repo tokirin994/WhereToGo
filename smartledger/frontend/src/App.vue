@@ -5,18 +5,21 @@ import { createIdentitySession } from './identitySession'
 const LedgerWorkspace=defineAsyncComponent(()=>import('./LedgerWorkspace.vue'))
 import { clearNutstoreCredentials } from './nutstoreSync'
 import { authorizedRequest, apiError } from './apiClient'
-import { portalUrl } from './appLinks'
+import { portalUrl, appBasePath, appRoutePath, ledgerOnly } from './appLinks'
 
 const apiUrl = import.meta.env.VITE_SMARTLEDGER_API_URL?.replace(/\/$/, '') || ''
 const authority = import.meta.env.VITE_OIDC_AUTHORITY
 const clientId = import.meta.env.VITE_OIDC_CLIENT_ID
+const registrationEnabled=import.meta.env.VITE_REGISTRATION_ENABLED!=='false'
 const localMockAuth = import.meta.env.VITE_LOCAL_MOCK_AUTH === 'true'
 const user = ref<User | null>(null)
 const error = ref('')
 const loading = ref(true)
-const bookId = computed(() => window.location.pathname.match(/^\/books\/([0-9a-f-]+)\/?$/i)?.[1] || null)
+const authAction=ref<'login'|'register'|null>(null)
+function resetAuthAction(){authAction.value=null}
+const bookId = computed(() => appRoutePath().match(/^\/books\/([0-9a-f-]+)\/?$/i)?.[1] || null)
 const accountKey = computed(() => `${authority || 'local'}:${user.value?.profile?.sub || 'unknown'}`)
-const identity=createIdentitySession({authority:authority||'',clientId:clientId||'',audience:import.meta.env.VITE_OIDC_AUDIENCE||'smartledger-api',
+const identity=createIdentitySession({basePath:appBasePath,authority:authority||'',clientId:clientId||'',audience:import.meta.env.VITE_OIDC_AUDIENCE||'smartledger-api',
   allowLoopback:import.meta.env.DEV&&['localhost','127.0.0.1','[::1]'].includes(window.location.hostname),
   returnPath:path=>/^\/(?:books\/[0-9a-f-]+\/?)?$/i.test(path),changed:next=>{user.value=next},
 })
@@ -25,14 +28,23 @@ function expired(){user.value=null;error.value='登录已过期，请重新登�
 async function signOut(){clearNutstoreCredentials(accountKey.value);try{await identity.signOut()}catch(cause){error.value=cause instanceof Error?cause.message:'统一退出失败'}}
 function reconnectLocal(){window.location.reload()}
 
-async function signIn() {
-  try{await identity.signIn()}catch(cause){error.value=cause instanceof Error?cause.message:'无法打开统一登录服务'}
+async function openIdentity(action:'login'|'register'){
+  if(authAction.value)return
+  error.value='';authAction.value=action
+  try{
+    if(action==='register'){
+      if(!registrationEnabled)throw new Error('当前部署未开放注册，请联系管理员')
+      await identity.register()
+    }else await identity.signIn()
+  }catch(cause){error.value=cause instanceof Error?cause.message:'账号服务暂时不可用，请重试';authAction.value=null}
 }
-async function register(){try{await identity.register()}catch(cause){error.value=cause instanceof Error?cause.message:'无法打开注册页面'}}
+async function signIn(){await openIdentity('login')}
+async function register(){await openIdentity('register')}
 
 onMounted(async () => {
   loading.value = true
-  const identityCallback=window.location.pathname.startsWith('/auth/')
+  window.addEventListener('pageshow',resetAuthAction)
+  const identityCallback=appRoutePath().startsWith('/auth/')
   let travelHandoff = new URLSearchParams(window.location.search)
   try {
     const loopback=['localhost','127.0.0.1','[::1]'].includes(window.location.hostname)
@@ -49,8 +61,8 @@ onMounted(async () => {
     } else {
       await identity.initialize()
       if(identityCallback)return
-      if(!user.value&&!window.location.pathname.startsWith('/auth/')&&!travelHandoff.has('signedOut')){await signIn();return}
-      if(window.location.pathname.startsWith('/auth/'))return
+      if(!user.value&&!appRoutePath().startsWith('/auth/')&&!travelHandoff.has('signedOut')){await signIn();return}
+      if(appRoutePath().startsWith('/auth/'))return
     }
 
     const tripId = travelHandoff.get('travelTripId')
@@ -69,19 +81,19 @@ onMounted(async () => {
       if (!response.ok) throw await apiError(response,'打开旅行账本失败')
       const result = await response.json() as { url: string }
       const target = new URL(result.url, window.location.origin)
-      if (target.origin !== window.location.origin || !/^\/books\/[0-9a-f-]+\/?$/i.test(target.pathname)) throw new Error('旅行账本服务返回了无效页面地址。')
+      if (target.origin !== window.location.origin || !/^\/books\/[0-9a-f-]+\/?$/i.test(appRoutePath(target.pathname))) throw new Error('旅行账本服务返回了无效页面地址。')
       window.location.replace(target.toString())
     }
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '初始化登录状态失败。'
   } finally { loading.value = false }
 })
-onUnmounted(()=>{if(mockRefreshTimer)window.clearInterval(mockRefreshTimer);window.removeEventListener('smartledger-session-expired',expired);window.removeEventListener('smartledger-sign-out',signOut)})
+onUnmounted(()=>{window.removeEventListener('pageshow',resetAuthAction);if(mockRefreshTimer)window.clearInterval(mockRefreshTimer);window.removeEventListener('smartledger-session-expired',expired);window.removeEventListener('smartledger-sign-out',signOut)})
 </script>
 
 <template>
   <LedgerWorkspace v-if="user && apiUrl && !error" :key="accountKey" :user="user" :api-url="apiUrl" :account-key="accountKey" :book-id="bookId" />
-  <main v-else class="auth-screen"><div v-if="loading" class="auth-card"><div class="auth-mark">🐟</div><h1>正在打开 SmartLedger</h1><p>准备本地账本空间…</p></div><div v-else class="auth-card"><div class="auth-mark">🐟</div><div class="eyebrow">SMARTLEDGER</div><h1>轻松记录每一笔。</h1><p>一个独立的个人记账空间，账本、流水、预算与导入工具都在这里。</p><button v-if="!localMockAuth" class="primary-button" @click="signIn">统一账号登录 <span>→</span></button><button v-if="!localMockAuth" class="secondary-button" @click="register">创建账号</button><a :href="portalUrl" class="ledger-auth-back">← 返回门户首页</a><button v-if="localMockAuth" class="primary-button" @click="reconnectLocal">重新连接本地服务</button><p v-if="error" class="error-message">{{ error }}</p></div></main>
+  <main v-else class="auth-screen"><div v-if="loading" class="auth-card"><div class="auth-mark">🐟</div><h1>正在打开 SmartLedger</h1><p>准备本地账本空间…</p></div><div v-else class="auth-card"><div class="auth-mark">🐟</div><div class="eyebrow">SMARTLEDGER</div><h1>轻松记录每一笔。</h1><p>一个独立的个人记账空间，账本、流水、预算与导入工具都在这里。</p><button v-if="!localMockAuth" class="primary-button" :disabled="!!authAction" @click="signIn">{{ authAction==='login'?'正在连接…':'统一账号登录' }} <span>→</span></button><button v-if="!localMockAuth&&registrationEnabled" class="secondary-button" :disabled="!!authAction" @click="register">{{ authAction==='register'?'正在打开注册…':'还没有账号？免费创建' }}</button><a v-if="!ledgerOnly" :href="portalUrl" class="ledger-auth-back">← 返回门户首页</a><button v-if="localMockAuth" class="primary-button" @click="reconnectLocal">重新连接本地服务</button><p v-if="error" class="error-message" role="alert">{{ error }}</p></div></main>
 </template>
 
-<style scoped>.auth-card>.secondary-button{width:100%;margin-top:12px;min-height:44px}.ledger-auth-back{display:block;margin-top:24px;font-size:12px;color:inherit;text-decoration:none;opacity:.65}</style>
+<style scoped>.auth-card button:disabled{opacity:.65;cursor:wait}.auth-card>.secondary-button{width:100%;margin-top:12px;min-height:44px}.ledger-auth-back{display:block;margin-top:24px;font-size:12px;color:inherit;text-decoration:none;opacity:.65}</style>
