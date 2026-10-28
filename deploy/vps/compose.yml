@@ -90,6 +90,7 @@ services:
       HTTP_MAX_THREADS: '16'
       SERVER_SHUTDOWN: graceful
       JAVA_TOOL_OPTIONS: -Xms32m -Xmx256m -XX:MaxMetaspaceSize=128m -Djava.net.preferIPv4Stack=true
+      TRAVEL_CREDENTIAL_KEY_FILE: /run/secrets/credential-keyring.json
       TRAVEL_AI_BASE_URL: ${TRAVEL_AI_BASE_URL:-}
       TRAVEL_AI_MODEL: ${TRAVEL_AI_MODEL:-}
       TRAVEL_AI_PROTOCOL: ${TRAVEL_AI_PROTOCOL:-chat-completions}
@@ -97,6 +98,7 @@ services:
       - {source: travel-password, target: spring.datasource.password}
       - {source: travel-migration-password, target: spring.flyway.password}
       - {source: travel-ai-key, target: travel.ai.api-key}
+      - {source: credential-keyring, target: credential-keyring.json}
     networks: [edge, travel-data]
     depends_on: {db: {condition: service_healthy}}
 

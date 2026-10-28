@@ -6,13 +6,11 @@ import { authAction, currentUser, register, signIn } from './auth'
 vi.mock('./auth',()=>({authAction:ref(null),authError:ref(''),currentUser:ref(null),registrationEnabled:true,register:vi.fn(),signIn:vi.fn(),signOut:vi.fn(),initializeAuth:vi.fn()}))
 beforeEach(()=>{vi.clearAllMocks();currentUser.value=null;authAction.value=null;window.history.replaceState({},'','/')})
 describe('portal account entry',()=>{
-  it('offers registration in the header and near the application cards',async()=>{
+  it('offers registration in the header without a promotional card',async()=>{
     const view=mount(PersonalPortal)
     await view.get('.portal-register').trigger('click')
     expect(register).toHaveBeenCalledWith('/')
-    expect(view.get('.portal-join').text()).toContain('一个账号')
-    await view.get('.portal-join button').trigger('click')
-    expect(register).toHaveBeenCalledTimes(2)
+    expect(view.find('.portal-join').exists()).toBe(false)
     view.unmount()
   })
   it('remembers the intended application when login is needed',async()=>{
@@ -27,7 +25,6 @@ describe('portal account entry',()=>{
     authAction.value='register'
     const view=mount(PersonalPortal)
     expect(view.get('.portal-register').attributes('disabled')).toBeDefined()
-    expect(view.get('.portal-join button').attributes('disabled')).toBeDefined()
     expect(view.get('[role=status]').text()).toContain('正在连接')
     await view.get('.portal-travel').trigger('click')
     expect(signIn).not.toHaveBeenCalled()

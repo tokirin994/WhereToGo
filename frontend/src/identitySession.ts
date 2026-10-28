@@ -79,9 +79,14 @@ export function createIdentitySession(config:{authority:string;clientId:string;a
       if(window.location.pathname===root+'auth/callback'){
         const user=await manager!.signinRedirectCallback()
         loaded(user)
-        const state=user.state as {returnTo?:unknown;registration?:boolean}|undefined
+        const state=user.state as {returnTo?:unknown;registration?:boolean;accountAction?:string}|undefined
         const target=new URL(safePath(state?.returnTo),origin)
         if(state?.registration&&target.pathname===root&&!target.searchParams.has('openApp'))target.searchParams.set('welcome','1')
+        if(state?.accountAction){
+          const result=new URLSearchParams(window.location.search).get('kc_action_status')
+          target.searchParams.set('accountAction',state.accountAction)
+          target.searchParams.set('actionResult',result==='success'?'success':result==='cancelled'?'cancelled':'returned')
+        }
         window.location.replace(target.pathname+target.search+target.hash);return
       }
       const saved=await manager!.getUser()
@@ -89,6 +94,10 @@ export function createIdentitySession(config:{authority:string;clientId:string;a
     },
     async signIn(returnTo=window.location.pathname+window.location.search){validate();await manager!.signinRedirect({ui_locales:'zh-CN',state:{returnTo:safePath(returnTo)}})},
     async register(returnTo=window.location.pathname+window.location.search){validate();await manager!.signinRedirect({prompt:'create',ui_locales:'zh-CN',state:{returnTo:safePath(returnTo),registration:true}})},
+    async accountAction(action:'UPDATE_EMAIL'|'UPDATE_PASSWORD'|'UPDATE_PROFILE'){
+      validate()
+      await manager!.signinRedirect({prompt:'login',max_age:0,ui_locales:'zh-CN',extraQueryParams:{kc_action:action},state:{returnTo:safePath(window.location.pathname+window.location.search),accountAction:action}})
+    },
     async signOut(){
       validate();stopped=true
       const idToken=current?.id_token

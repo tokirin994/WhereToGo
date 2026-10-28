@@ -35,7 +35,7 @@ try{
   try{& 'D:\Application\Nodejs\npm.cmd' run build -- --mode vps --outDir (Join-Path $output "dist\$kind") --emptyOutDir;if($LASTEXITCODE -ne 0){throw "Frontend build failed: $kind"}}finally{Pop-Location}
  }
 }finally{foreach($name in $before.Keys){[Environment]::SetEnvironmentVariable($name,$before[$name],'Process')};$env:PATH=$oldPath}
-foreach($file in @('compose.yml','Api.Dockerfile','Identity.Dockerfile','provision.py','activate.sh','backup.sh','init-databases.sh','host-firewall.sh','configure-operations.sh','configure-registration.sh','configure-registration.py')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $output $file)}
+foreach($file in @('compose.yml','Api.Dockerfile','Identity.Dockerfile','provision.py','activate.sh','backup.sh','init-databases.sh','host-firewall.sh','configure-operations.sh','configure-registration.sh','configure-registration.py','backup-export.py','configure-backup-download.sh')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $output $file)}
 foreach($file in @('Postgres.Dockerfile','runtime-grants.sql')){Copy-Item -LiteralPath (Join-Path $repo "deploy\production\$file") -Destination (Join-Path $output $file)}
 Copy-Item -LiteralPath (Join-Path $repo 'identity\themes\personal') -Destination (Join-Path $output 'identity-theme') -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $repo 'identity\realm-local.json') -Destination (Join-Path $output 'realm-template.json')

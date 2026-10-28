@@ -25,6 +25,12 @@ beforeEach(()=>{
 })
 afterEach(()=>vi.unstubAllGlobals())
 describe('unified account registration',()=>{
+  it('requires fresh authentication before sensitive account changes',async()=>{
+    window.location.pathname='/account/'
+    await session().accountAction('UPDATE_EMAIL')
+    expect(oidc.redirect).toHaveBeenCalledWith(expect.objectContaining({prompt:'login',max_age:0,extraQueryParams:{kc_action:'UPDATE_EMAIL'}}))
+  })
+
   it('starts Keycloak registration with OIDC state and a Chinese interface',async()=>{
     await session().register('/travel/?tab=trips')
     expect(oidc.redirect).toHaveBeenCalledWith({prompt:'create',ui_locales:'zh-CN',state:{returnTo:'/travel/?tab=trips',registration:true}})

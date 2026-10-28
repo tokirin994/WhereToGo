@@ -28,14 +28,15 @@ import ImportSourcePreview from './ImportSourcePreview.vue'
 import PaymentChannelSettings from './PaymentChannelSettings.vue'
 import AppSwitcher from './AppSwitcher.vue'
 import ApiSecurityPanel from './ApiSecurityPanel.vue'
-import { portalUrl, travelUrl, appBasePath, ledgerOnly } from './appLinks'
+import { portalUrl, travelUrl, appBasePath, ledgerOnly, accountUrl } from './appLinks'
 import { authorizedRequest } from './apiClient'
 import { defaultTransactionFilters, type TransactionFilters } from './ledgerViewModels'
 
 const props = defineProps<{ user: User; apiUrl: string; accountKey: string; bookId: string | null }>()
 const snapshot = ref<LedgerSnapshot>(createInitialSnapshot())
-const activeTab = ref<'overview' | 'books' | 'transactions' | 'import' | 'entry' | 'more'>('overview')
-const morePage = ref<'menu' | 'budgets' | 'categories' | 'settings'>('menu')
+const openSettings=new URLSearchParams(window.location.search).get('section')==='settings'
+const activeTab = ref<'overview' | 'books' | 'transactions' | 'import' | 'entry' | 'more'>(openSettings?'more':'overview')
+const morePage = ref<'menu' | 'budgets' | 'categories' | 'settings'>(openSettings?'settings':'menu')
 const selectedBookId = ref<string | null>(null)
 const bookId = ref<string | null>(props.bookId)
 const loading = ref(true)
@@ -584,7 +585,7 @@ watch(()=>[snapshot.value.settings.cloudSyncEnabled,snapshot.value.settings.midn
             <div class="settings-actions"><button class="primary-button" :disabled="busy" @click="syncNow()">智能同步</button><button class="secondary-button" :disabled="busy" @click="pushLocalNow()">仅推送</button><button class="secondary-button" :disabled="busy" @click="pullRemoteNow()">仅拉取</button></div>
           </section>
           <ApiSecurityPanel :api-url="apiUrl" :token="user.access_token"/>
-          <section class="settings-card nutstore-card"><header><span class="settings-icon">☁</span><div><h3>坚果云 WebDAV</h3><small>把当前账本快照备份到你的坚果云空间</small></div><span class="provider-badge">可选备份</span></header>
+          <a class="secondary-button" :href="accountUrl">统一账号与服务 Key 管理 →</a><section class="settings-card nutstore-card"><header><span class="settings-icon">☁</span><div><h3>坚果云 WebDAV</h3><small>把当前账本快照备份到你的坚果云空间</small></div><span class="provider-badge">可选备份</span></header>
             <div class="nutstore-help">请先在坚果云的“安全选项 → 第三方应用管理”创建应用密码。这里填写坚果云注册邮箱和应用密码，不要填写登录密码。</div>
             <p class="nutstore-message">{{ nutstoreStatus.needsUpdate?'已有凭证需要恢复密钥或重新配置':nutstoreStatus.configured?`已加密保存 · ${nutstoreStatus.usernameMasked||'当前账号'}`:'尚未配置' }} · {{ nutstoreStatus.available?'AES-256-GCM 服务器加密存储':'服务器加密密钥未配置' }}</p>
             <label class="nutstore-field"><span>坚果云账号</span><input v-model.trim="nutstoreCredentials.username" type="email" autocomplete="off" :placeholder="nutstoreStatus.configured?'更换配置时填写完整邮箱':'name@example.com'"/></label>

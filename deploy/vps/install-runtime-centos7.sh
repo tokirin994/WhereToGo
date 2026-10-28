@@ -4,7 +4,12 @@ umask 077
 test "$(id -u)" = 0
 test "$(uname -m)" = x86_64
 install -d -m 0755 /opt/wheretogo/tools /opt/wheretogo/incoming /opt/wheretogo/releases
-install -d -m 0700 /opt/wheretogo/secrets /opt/wheretogo/backups
+install -d -m 0700 /opt/wheretogo/secrets
+if getent group wtgbackup >/dev/null; then
+ install -d -m 0750 -o root -g wtgbackup /opt/wheretogo/backups
+else
+ install -d -m 0700 /opt/wheretogo/backups
+fi
 if ! test -x /opt/wheretogo/tools/docker-28.5.2/docker/dockerd; then
  curl --proto '=https' --tlsv1.2 -fL --retry 2 --connect-timeout 20 --max-time 480 https://download.docker.com/linux/static/stable/x86_64/docker-28.5.2.tgz -o /opt/wheretogo/incoming/docker-28.5.2.tgz
  tar -tzf /opt/wheretogo/incoming/docker-28.5.2.tgz | awk '$0 !~ /^docker\// || $0 ~ /(^|\/)\.\.(\/|$)/ {bad=1} END {exit bad}'

@@ -9,7 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Fixed operator-selected providers only. No user-supplied remote URL is fetched. */
+/** Bounded HTTPS transport; public DNS is verified and pinned for every connection. */
 @Component
 public class ExternalJsonClient {
     private final ObjectMapper json;
@@ -33,21 +33,33 @@ public class ExternalJsonClient {
         return body.deepCopy();
     }
     public JsonNode send(String address,JsonNode payload,Map<String,String> headers,int timeout,int maxBytes){
-        HttpURLConnection connection=null;
-        try{
-            connection=(HttpURLConnection)endpoint(address).toURL().openConnection();
-            connection.setConnectTimeout(5000);connection.setReadTimeout(timeout);connection.setInstanceFollowRedirects(false);
-            connection.setRequestProperty("User-Agent","WhereToGo/0.3 (+https://github.com/tokirin994/WhereToGo)");
-            connection.setRequestProperty("Accept","application/json");
-            for(Map.Entry<String,String> header:headers.entrySet())connection.setRequestProperty(header.getKey(),header.getValue());
-            if(payload!=null){connection.setRequestMethod("POST");connection.setDoOutput(true);connection.setRequestProperty("Content-Type","application/json");try(OutputStream out=connection.getOutputStream()){out.write(json.writeValueAsBytes(payload));}}
-            int status=connection.getResponseCode();
-            if(status<200||status>=300)throw new IOException("provider_http_"+status);
-            try(InputStream in=connection.getInputStream();ByteArrayOutputStream out=new ByteArrayOutputStream()){
-                byte[] buffer=new byte[8192];int count,total=0;while((count=in.read(buffer))!=-1){total+=count;if(total>maxBytes)throw new IOException("response_limit");out.write(buffer,0,count);}return json.readTree(out.toByteArray());
+        org.apache.http.client.config.RequestConfig options=org.apache.http.client.config.RequestConfig.custom().setConnectTimeout(5000).setSocketTimeout(timeout).setConnectionRequestTimeout(5000).setRedirectsEnabled(false).build();
+        try(org.apache.http.impl.client.CloseableHttpClient client=org.apache.http.impl.client.HttpClients.custom().setDnsResolver(ExternalJsonClient::publicAddresses).disableRedirectHandling().disableAutomaticRetries().setDefaultRequestConfig(options).build()){
+            java.net.URI uri=endpoint(address);
+            org.apache.http.client.methods.HttpRequestBase request;
+            if(payload==null)request=new org.apache.http.client.methods.HttpGet(uri);
+            else{org.apache.http.client.methods.HttpPost post=new org.apache.http.client.methods.HttpPost(uri);post.setEntity(new org.apache.http.entity.ByteArrayEntity(json.writeValueAsBytes(payload),org.apache.http.entity.ContentType.APPLICATION_JSON));request=post;}
+            request.setHeader("User-Agent","WhereToGo/0.4 (+https://github.com/tokirin994/WhereToGo)");request.setHeader("Accept","application/json");
+            for(Map.Entry<String,String> header:headers.entrySet())request.setHeader(header.getKey(),header.getValue());
+            try(org.apache.http.client.methods.CloseableHttpResponse response=client.execute(request)){
+                int status=response.getStatusLine().getStatusCode();if(status<200||status>=300||response.getEntity()==null)throw new IOException("provider_rejected");
+                try(InputStream in=response.getEntity().getContent();ByteArrayOutputStream out=new ByteArrayOutputStream()){
+                    byte[] buffer=new byte[8192];int count,total=0;while((count=in.read(buffer))!=-1){total+=count;if(total>maxBytes)throw new IOException("response_limit");out.write(buffer,0,count);}return json.readTree(out.toByteArray());
+                }
             }
-        }catch(ResponseStatusException error){throw error;}catch(Exception error){throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,"外部服务暂时不可用，请稍后重试；原有数据未修改");}
-        finally{if(connection!=null)connection.disconnect();}
+        }catch(ResponseStatusException error){throw error;}catch(Exception error){throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,"外部服务暂时不可用，请检查服务地址、Key 和模型；原有数据未修改");}
+    }
+    /** Resolve once inside the HTTP transport, and connect only to the verified public addresses. */
+    public static InetAddress[] publicAddresses(String host)throws UnknownHostException{
+        InetAddress[] addresses=InetAddress.getAllByName(host);
+        for(InetAddress address:addresses)if(!publicAddress(address))throw new UnknownHostException("Private service destinations are forbidden");
+        return addresses;
+    }
+    public static boolean publicAddress(InetAddress address){
+        if(address.isAnyLocalAddress()||address.isLoopbackAddress()||address.isLinkLocalAddress()||address.isSiteLocalAddress()||address.isMulticastAddress())return false;
+        byte[] b=address.getAddress();int first=b[0]&255,second=b[1]&255;
+        if(b.length==16)return (first&0xfe)!=0xfc&&first!=0xff;
+        return first!=0&&first<224&&!(first==100&&second>=64&&second<=127)&&!(first==192&&second==0)&&!(first==198&&(second==18||second==19));
     }
     private static class Cached{final JsonNode value;final long expires;Cached(JsonNode value,long expires){this.value=value;this.expires=expires;}}
 }

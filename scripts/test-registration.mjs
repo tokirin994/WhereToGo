@@ -4,6 +4,7 @@ import { randomBytes, createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { accountAcceptance } from './account-acceptance.mjs'
 const require=createRequire(new URL('../frontend/package.json',import.meta.url))
 const {JSDOM}=require('jsdom')
 const origin=new URL(process.env.WTG_PUBLIC_ORIGIN||'https://personal-45-205-23-125.sslip.io').origin
@@ -39,11 +40,12 @@ async function follow(request,response,stop){
   }
   throw Error('Too many redirects')
 }
-async function begin(request,kind='login',ledger=false){
+async function begin(request,kind='login',ledger=false,extra={}){
   const verifier=randomBytes(32).toString('base64url'),state=randomBytes(16).toString('hex')
   const clientId=ledger?'smartledger-web':'wheretogo-web',redirect=origin+(ledger?'/ledger/':'/')+'auth/callback'
   const params=new URLSearchParams({client_id:clientId,redirect_uri:redirect,response_type:'code',scope:'openid profile email',ui_locales:'zh-CN',state,code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'})
   if(kind==='register')params.set('prompt','create')
+  for(const [key,value] of Object.entries(extra))params.set(key,value)
   const response=await request(issuer+'/protocol/openid-connect/auth?'+params)
   return {request,response,verifier,state,clientId,redirect}
 }
@@ -169,6 +171,7 @@ try{
   }
   for(const path of ['/identity/admin/','/identity/realms/master/.well-known/openid-configuration','/travel-api/actuator/env','/ledger-api/actuator/env'])await status(await fetch(origin+path,{redirect:'manual'}),404,'Private route '+path)
   pass('Application pages and CSP are available; identity administration and diagnostic routes remain private')
+  if(process.argv.includes('--account-checks'))await accountAcceptance({origin,issuer,runId,first,second,ledgerA,ledgerB,begin,exchange,login,client,pass,assert})
   report.success=true;save()
   console.log('Acceptance complete. Clean up ONLY the QA usernames listed in '+reportFile)
 }catch(error){report.error=error.message;save();throw error}

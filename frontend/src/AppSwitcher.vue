@@ -12,7 +12,7 @@ onUnmounted(()=>window.removeEventListener('pointerdown',outside))
 <template>
   <details ref="menu" class="application-switcher" @keydown.esc.stop.prevent="close">
     <summary aria-label="切换应用"><LayoutGrid :size="17"/><span>应用</span></summary>
-    <nav aria-label="应用切换"><small>我的应用</small><a href="/account/"><i><House :size="18"/></i><span><b>账号与安全</b><small>统一账号、密码与会话管理</small></span><ArrowUpRight :size="14"/></a><a :href="portalUrl" :aria-current="current==='portal'?'page':undefined"><i><House :size="18"/></i><span><b>个人门户</b><small>返回应用首页</small></span><ArrowUpRight :size="14"/></a><a :href="travelUrl" :aria-current="current==='travel'?'page':undefined"><i><Compass :size="18"/></i><span><b>WhereToGo</b><small>地点收藏与旅行规划</small></span><ArrowUpRight :size="14"/></a><a :href="smartLedgerUrl"><i><BookOpen :size="18"/></i><span><b>SmartLedger</b><small>账本、流水与截图识别</small></span><ArrowUpRight :size="14"/></a></nav>
+    <nav aria-label="应用切换"><small>我的应用</small><a href="/account/"><i><House :size="18"/></i><span><b>账号与服务</b><small>统一账号、密码与会话管理</small></span><ArrowUpRight :size="14"/></a><a :href="portalUrl" :aria-current="current==='portal'?'page':undefined"><i><House :size="18"/></i><span><b>个人门户</b><small>返回应用首页</small></span><ArrowUpRight :size="14"/></a><a :href="travelUrl" :aria-current="current==='travel'?'page':undefined"><i><Compass :size="18"/></i><span><b>WhereToGo</b><small>地点收藏与旅行规划</small></span><ArrowUpRight :size="14"/></a><a :href="smartLedgerUrl"><i><BookOpen :size="18"/></i><span><b>SmartLedger</b><small>账本、流水与截图识别</small></span><ArrowUpRight :size="14"/></a></nav>
   </details>
 </template>
 <style scoped>

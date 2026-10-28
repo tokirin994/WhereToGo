@@ -13,6 +13,7 @@ import org.springframework.web.server.ResponseStatusException;
 /** Protocol adapters; itinerary validation remains provider-independent in the planner. */
 @Component
 public class AiGateway {
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private com.travelatlas.account.ProviderVault vault;
     private final ExternalJsonClient http;private final ObjectMapper json;
     private final String base,key,model,protocol,tokenField,authMode;private final int maxTokens;
     @Value("${travel.ai.anthropic-version:2023-06-01}") private String anthropicVersion="2023-06-01";
@@ -21,8 +22,12 @@ public class AiGateway {
         @Value("${travel.ai.model:}") String model,@Value("${travel.ai.protocol:chat-completions}") String protocol,
         @Value("${travel.ai.token-field:max_tokens}") String tokenField,@Value("${travel.ai.auth-mode:api-key}") String authMode,
         @Value("${travel.ai.max-tokens:6000}") int maxTokens){this.http=http;this.json=json;this.base=base.trim();this.key=key.trim();this.model=model.trim();this.protocol=protocol;this.tokenField=tokenField;this.authMode=authMode;this.maxTokens=maxTokens;}
-    public boolean configured(){return !base.isEmpty()&&!key.isEmpty()&&!model.isEmpty();}
-    public String protocol(){return protocol;}
+    public static AiGateway forAccount(ExternalJsonClient http,ObjectMapper json,JsonNode config,int maxTokens){
+        return new AiGateway(http,json,config.path("baseUrl").asText(),config.path("apiKey").asText(),config.path("model").asText(),config.path("protocol").asText("chat-completions"),config.path("tokenField").asText("max_tokens"),config.path("authMode").asText("api-key"),maxTokens);
+    }
+    private AiGateway effective(){JsonNode config=vault==null?null:vault.current("ai");return config==null?this:forAccount(http,json,config,maxTokens);}
+    public boolean configured(){AiGateway selected=effective();return selected==this?!base.isEmpty()&&!key.isEmpty()&&!model.isEmpty():selected.configured();}
+    public String protocol(){AiGateway selected=effective();return selected==this?protocol:selected.protocol;}
     String address(){
         URI uri=ExternalJsonClient.endpoint(base);
         if(uri.getQuery()!=null||!Arrays.asList("chat-completions","responses","anthropic").contains(protocol)||maxTokens<256||maxTokens>32000)throw config();
@@ -56,6 +61,7 @@ public class AiGateway {
         StringBuilder out=new StringBuilder();if(content.isArray())for(JsonNode item:content)if("text".equals(item.path("type").asText()))out.append(item.path("text").asText());return nonempty(out.toString());
     }
     public String generate(String system,String context){
+        AiGateway selected=effective();if(selected!=this)return selected.generate(system,context);
         if(!configured())throw new ResponseStatusException(HttpStatus.CONFLICT,"请先配置 AI 服务的协议、地址、模型和服务端密钥");
         Map<String,String> headers=new HashMap<>();
         if("anthropic".equals(protocol)){headers.put("anthropic-version",anthropicVersion);if("bearer".equals(authMode))headers.put("Authorization","Bearer "+key);else if("api-key".equals(authMode))headers.put("x-api-key",key);else throw config();}

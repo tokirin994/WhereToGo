@@ -1,0 +1,26 @@
+import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+import AccountCenter from './AccountCenter.vue'
+const mocks=vi.hoisted(()=>({account:vi.fn(),ledger:vi.fn(),api:vi.fn(),action:vi.fn()}))
+vi.mock('./auth',async()=>{const {ref}=await import('vue');return {accountConsoleUrl:'https://id.example/account/',authError:ref(''),currentUser:ref({profile:{sub:'alice',preferred_username:'alice',email:'alice@example.invalid'}}),identity:{accountAction:mocks.action},signOut:vi.fn()}})
+vi.mock('./accountApi',()=>({accountRequest:mocks.account,ledgerAccountRequest:mocks.ledger}))
+vi.mock('./api/client',()=>({apiRequest:mocks.api}))
+let wrapper:ReturnType<typeof mount>|undefined
+beforeEach(()=>{
+  vi.clearAllMocks();history.replaceState({},'','/account/');vi.stubGlobal('confirm',()=>true)
+  mocks.account.mockImplementation(async(path:string)=>path==='/sessions'?[{id:'device1',browser:'Test browser',current:true,lastAccess:1793100000,clients:[{clientId:'smartledger-web'}]}]:{id:'alice',username:'alice',email:'alice@example.invalid',emailVerified:false,firstName:'Alice',lastName:''})
+  mocks.api.mockResolvedValue({available:true,encryption:'AES-256-GCM',providers:[]})
+  mocks.ledger.mockResolvedValue({available:true,configured:true,usernameMasked:'a***@example.invalid'})
+})
+afterEach(()=>{wrapper?.unmount();vi.unstubAllGlobals()})
+async function start(tab='profile'){history.replaceState({},'','/account/?tab='+tab);wrapper=mount(AccountCenter);await flushPromises();return wrapper}
+describe('unified account management',()=>{
+  it('shows live account information without displaying passwords',async()=>{const w=await start();expect(w.text()).toContain('alice@example.invalid');expect(w.text()).toContain('邮箱未验证');expect(w.find('input[type=password]').exists()).toBe(false)})
+  it('uses step-up authentication for an email change',async()=>{const w=await start();await w.findAll('button').find(button=>button.text()==='更换邮箱 →')!.trigger('click');expect(mocks.action).toHaveBeenCalledWith('UPDATE_EMAIL')})
+  it('uses step-up authentication for password changes',async()=>{const w=await start('security');await w.findAll('button').find(button=>button.text()==='修改密码 →')!.trigger('click');expect(mocks.action).toHaveBeenCalledWith('UPDATE_PASSWORD');expect(w.text()).toContain('当前设备')})
+  it('saves provider keys to the server then clears the input',async()=>{const w=await start('providers');mocks.api.mockResolvedValue({available:true,providers:[{provider:'deepseek',enabled:true,keyMasked:'••••1234'}]});await w.get('input[type=password]').setValue('dummy-provider-key-1234');await w.get('form').trigger('submit');await flushPromises();expect(mocks.api).toHaveBeenLastCalledWith('/api/v1/account/providers/deepseek',expect.objectContaining({method:'PUT'}));expect((w.get('input[type=password]').element as HTMLInputElement).value).toBe('')})
+  it('explains the high-de map key type and uses the same provider controls',async()=>{const w=await start('providers');await w.findAll('.account-provider-grid button').find(button=>button.text().includes('高德'))!.trigger('click');expect(w.text()).toContain('Web 服务');expect(w.find('input[type=url]').exists()).toBe(false)})
+  it('connects the ledger credential status and settings route',async()=>{const w=await start('ledger');expect(mocks.ledger).toHaveBeenCalled();expect(w.text()).toContain('a***@example.invalid');expect(w.findAll('a').some(link=>link.attributes('href')?.includes('section=settings'))).toBe(true)})
+  it('updates the ledger credential record and clears the password',async()=>{const w=await start('ledger');await w.get('input[type=email]').setValue('qa@example.invalid');await w.get('input[type=password]').setValue('dummy-app-password');await w.get('form').trigger('submit');await flushPromises();expect(mocks.ledger).toHaveBeenLastCalledWith('PUT',{username:'qa@example.invalid',appPassword:'dummy-app-password'});expect((w.get('input[type=password]').element as HTMLInputElement).value).toBe('')})
+  it('keeps each service error visible without hiding the account page',async()=>{mocks.ledger.mockRejectedValue(Error('记账连接失败'));const w=await start('ledger');expect(w.text()).toContain('记账连接失败');expect(w.findAll('.account-tabs button')).toHaveLength(4)})
+})
