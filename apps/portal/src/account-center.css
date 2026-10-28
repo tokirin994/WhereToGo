@@ -17,6 +17,12 @@
 .account-profile-copy .account-eyebrow { font-size: 9px; }
 .account-profile-copy h2 { margin-top: 4px; font-size: 23px; }
 .account-profile-copy p { margin: 3px 0 8px; font-size: 12px; }
+.account-profile.is-overview { padding: 18px 23px; gap: 15px; }
+.account-profile.is-overview .account-avatar { width: 46px; height: 46px; border-radius: 15px; font-size: 21px; }
+.account-profile.is-overview .account-profile-copy { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.account-profile.is-overview .account-profile-copy > .account-eyebrow { display: none; }
+.account-profile.is-overview .account-profile-copy h2 { margin: 0; font-size: 18px; }
+.account-profile.is-overview .account-profile-copy p { order: 1; flex-basis: 100%; margin: 0; font-size: 11px; }
 .account-badge { display: inline-flex; align-items: center; vertical-align: middle; gap: 4px; padding: 3px 8px; border-radius: 6px; background: var(--portal-raised); font-size: 10px; font-weight: 500; line-height: 1.5; color: var(--muted); }
 .account-badge.is-verified { color: var(--accent); background: var(--portal-travel-soft); }
 .account-connected { display: grid; gap: 7px; flex: none; padding-left: 30px; border-left: 1px solid var(--border); }
