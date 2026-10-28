@@ -12,7 +12,13 @@ const callback = /^\/auth\//.test(window.location.pathname)
 const login = /^\/login(?:\/|$)/.test(window.location.pathname)
 const requiresAccount=system||account||callback
 onMounted(()=>{if(!requiresAccount)void initializeAuth()})
-const Page = asyncPage(() => login ? import('./LoginEntry.vue') : system ? import('./ApiManagement.vue') : account ? import('./AccountCenter.vue') : import('./PersonalPortal.vue'),account?'账号中心':'个人空间')
+// Keep each import in its own loader. A conditional expression inside one
+// loader can cause the production preloader to retain only the last view's CSS.
+const LoginPage=asyncPage(()=>import('./LoginEntry.vue'),'统一登录')
+const SystemPage=asyncPage(()=>import('./ApiManagement.vue'),'服务管理')
+const AccountPage=asyncPage(()=>import('./AccountCenter.vue'),'账号中心')
+const HomePage=asyncPage(()=>import('./PersonalPortal.vue'),'个人空间')
+const Page=login?LoginPage:system?SystemPage:account?AccountPage:HomePage
 window.addEventListener('pagehide',()=>identity.dispose(),{once:true})
 document.title = system ? 'API 管理 · 个人门户' : account ? '账号与服务 · 我的空间' : login ? '统一登录 · 我的空间' : '个人门户 · 我的应用'
 </script>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ArrowLeft, ArrowUpRight, Check, ChevronRight, Cloud, Fingerprint, KeyRound, LayoutGrid, LockKeyhole, Monitor, RefreshCw, ShieldCheck, UserRound } from '@lucide/vue'
 import { accountConsoleUrl, authError, currentUser, identity, signOut } from './auth'
 import { smartLedgerUrl, travelUrl } from './appLinks'
@@ -34,7 +34,18 @@ const sections=[
 const activeSection=computed(()=>sections.find(item=>item.id===tab.value)!)
 const profileChanged=computed(()=>!!profile.value&&(names.value.firstName!==(profile.value.firstName||'')||names.value.lastName!==(profile.value.lastName||'')))
 const providerCount=computed(()=>providers.value.providers.filter(item=>!item.needsUpdate).length)
+const sectionNav=ref<HTMLElement|null>(null)
 function switchTab(id:string){if(pending.value)return;tab.value=id;error.value='';message.value=''}
+async function navigateSections(event:KeyboardEvent){
+ if(pending.value||event.altKey||event.ctrlKey||event.metaKey)return
+ const buttons=[...(sectionNav.value?.querySelectorAll<HTMLButtonElement>('button')||[])]
+ const current=buttons.findIndex(button=>button.contains(event.target as Node))
+ if(current<0)return
+ const next=event.key==='Home'?0:event.key==='End'?sections.length-1:['ArrowRight','ArrowDown'].includes(event.key)?(current+1)%sections.length:['ArrowLeft','ArrowUp'].includes(event.key)?(current+sections.length-1)%sections.length:-1
+ if(next<0)return
+ event.preventDefault();switchTab(sections[next]!.id);await nextTick();buttons[next]?.focus()
+}
+function resetProfile(){if(!profile.value)return;names.value={firstName:profile.value.firstName||'',lastName:profile.value.lastName||''};message.value='已撤销未保存的资料修改'}
 function openProvider(id:string){switchTab('providers');selectProvider(id)}
 function selectProvider(id:string){selected.value=id;const saved=providers.value.providers.find(row=>row.provider===id),preset=providerPresets.find(row=>row.id===id)!;baseUrl.value=saved?.config?.baseUrl||preset.baseUrl;model.value=saved?.config?.model||preset.model;protocol.value=saved?.config?.protocol||preset.protocol;tokenField.value=saved?.config?.tokenField||'max_tokens';authMode.value=saved?.config?.authMode||'api-key';enabled.value=saved?.enabled??true;apiKey.value='';message.value=''}
 async function act(name:string,action:()=>Promise<void>){if(pending.value)return;pending.value=name;error.value='';message.value='';try{await action()}catch(cause){error.value=cause instanceof Error?cause.message:'操作失败，请稍后重试'}finally{pending.value=''}}
@@ -59,7 +70,7 @@ onMounted(async()=>{selectProvider(selected.value);await load();const params=new
       <div class="account-heading"><div><span class="account-eyebrow">ACCOUNT / WORKSPACE</span><h1>账号与应用</h1><p>打开应用，管理资料、安全与个人服务。</p></div><button class="account-button account-refresh" :disabled="!!pending||loading" @click="act('refresh',load)"><RefreshCw :size="15" :class="{'account-spinning':pending==='refresh'||loading}"/>{{ pending==='refresh'||loading?'同步中…':'刷新信息' }}</button></div>
       <article class="account-profile" :class="{'is-overview':tab==='overview'}"><span class="account-avatar" aria-hidden="true">{{ name.slice(0,1).toUpperCase() }}</span><div class="account-profile-copy"><span class="account-eyebrow">我的账号</span><h2>{{ name }}</h2><p>{{ profile?.email||currentUser?.profile.email||'尚未填写邮箱' }}</p><span class="account-badge" :class="{'is-verified':profile?.emailVerified}"><Check v-if="profile?.emailVerified" :size="12"/>{{ profile?.emailVerified?'邮箱已验证':'邮箱未验证' }}</span></div><div v-if="tab!=='overview'" class="account-connected"><span><ShieldCheck :size="15"/>统一身份管理</span><small>一次登录，连接所有应用</small><div><a :href="travelUrl">旅行规划<ArrowUpRight :size="12"/></a><a :href="smartLedgerUrl">日常记账<ArrowUpRight :size="12"/></a></div></div></article>
       <div class="account-layout">
-      <aside class="account-sidebar"><nav class="account-tabs" aria-label="账号设置"><button v-for="item in sections" :key="item.id" :aria-current="tab===item.id?'page':undefined" :disabled="!!pending" @click="switchTab(item.id)"><component :is="item.icon" :size="19"/><span><b>{{ item.name }}</b><small>{{ item.description }}</small></span><ChevronRight class="account-nav-arrow" :size="14"/></button></nav><div class="account-sidebar-note"><LockKeyhole :size="17"/><p>你的凭据，只属于你。<small>服务 Key 加密保存，账号在应用间统一管理。</small></p></div></aside>
+      <aside class="account-sidebar"><nav ref="sectionNav" class="account-tabs" aria-label="账号设置" @keydown="navigateSections"><button v-for="item in sections" :key="item.id" :aria-current="tab===item.id?'page':undefined" :disabled="!!pending" @click="switchTab(item.id)"><component :is="item.icon" :size="19"/><span><b>{{ item.name }}</b><small>{{ item.description }}</small></span><ChevronRight class="account-nav-arrow" :size="14"/></button></nav><div class="account-sidebar-note"><LockKeyhole :size="17"/><p>你的凭据，只属于你。<small>服务 Key 加密保存，账号在应用间统一管理。</small></p></div></aside>
       <div class="account-workspace" :aria-busy="!!pending||loading">
       <div class="account-section-title"><span><component :is="activeSection.icon" :size="18"/></span><div><small>{{ tab==='overview'?'我的工作台':'账号设置' }}</small><h2>{{ activeSection.name }}</h2></div><span class="account-section-count">{{ sections.findIndex(item=>item.id===tab)+1 }} / {{ sections.length }}</span></div>
       <p v-if="error||authError" class="account-notice error" role="alert">{{ error||authError }}</p><p v-if="message" class="account-notice" role="status">{{ message }}</p>
@@ -68,7 +79,7 @@ onMounted(async()=>{selectProvider(selected.value);await load();const params=new
       <AccountOverview v-if="tab==='overview'" :session-count="sessions.length" :provider-count="providerCount" :cloud-configured="!!nutstore?.configured" :identity-state="loadingIdentity?'loading':identityError||sessionError?'error':'ready'" :provider-state="loadingProviders?'loading':providerError?'error':'ready'" :ledger-state="loadingLedger?'loading':ledgerError?'error':'ready'" :theme="theme" @navigate="switchTab" @provider="openProvider" @theme="theme=$event"/>
       <section v-else-if="tab==='profile'" class="account-section">
         <div class="account-card-heading"><span class="account-card-icon"><UserRound :size="20"/></span><div><h2>基本信息</h2><p>让应用用你喜欢的方式称呼你。</p></div></div><p v-if="identityError" class="account-notice error" role="alert">{{ identityError }} <button class="account-button" :disabled="!!pending||loadingIdentity" @click="act('identity-refresh',loadIdentity)">重新读取资料</button></p>
-        <form class="account-form" @submit.prevent="saveProfile"><label>用户名<input :value="profile?.username||currentUser?.profile.preferred_username" readonly/><small>注册时的唯一名称，暂不支持修改。</small></label><div class="account-two-columns"><label>名字<input v-model.trim="names.firstName" maxlength="255" autocomplete="given-name" placeholder="你的名字"/></label><label>姓氏<input v-model.trim="names.lastName" maxlength="255" autocomplete="family-name" placeholder="你的姓氏"/></label></div><div class="account-save-row"><small>{{ profileChanged?'资料有改动，记得保存':'资料已与统一账号同步' }}</small><button class="account-button primary" :disabled="!!pending||!profileChanged">{{ pending==='profile'?'保存中…':'保存资料' }}</button></div></form>
+        <form class="account-form" @submit.prevent="saveProfile"><label>用户名<input :value="profile?.username||currentUser?.profile.preferred_username" readonly/><small>注册时的唯一名称，暂不支持修改。</small></label><div class="account-two-columns"><label>名字<input v-model.trim="names.firstName" maxlength="255" autocomplete="given-name" placeholder="你的名字"/></label><label>姓氏<input v-model.trim="names.lastName" maxlength="255" autocomplete="family-name" placeholder="你的姓氏"/></label></div><div class="account-save-row"><small>{{ profileChanged?'资料有改动，记得保存':'资料已与统一账号同步' }}</small><div class="account-actions"><button class="account-button primary" :disabled="!!pending||!profileChanged">{{ pending==='profile'?'保存中…':'保存资料' }}</button><button v-if="profileChanged" type="button" class="account-button" :disabled="!!pending" @click="resetProfile">撤销修改</button></div></div></form>
         <div class="account-setting-row"><div><h3>绑定邮箱</h3><p>{{ profile?.email||'尚未设置' }}</p><small>新邮箱目前不发送验证邮件；更换后会标记为未验证。</small></div><button class="account-button" :disabled="!!pending" @click="sensitive('UPDATE_EMAIL')">更换邮箱 →</button></div>
         <details class="account-details"><summary>账号标识</summary><dl><dt>账号 ID</dt><dd>{{ profile?.id||currentUser?.profile.sub }}</dd><dt>身份服务</dt><dd>{{ currentUser?.profile.iss }}</dd></dl></details>
       </section>
