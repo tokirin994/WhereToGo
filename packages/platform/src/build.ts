@@ -8,6 +8,13 @@ export function securityHeaders(env:Record<string,string>){
     let identity="'self'"
     const ledger=env.VITE_APP_ID==='ledger'||env.VITE_OIDC_CLIENT_ID==='smartledger-web'
     const images=new Set<string>(["'self'",'data:','blob:',...(ledger?[]:['https://tile.openstreetmap.org'])])
+    for(const app of JSON.parse(env.VITE_APPLICATIONS_JSON||'[]')){
+      if(!app.apiUrl)continue
+      if(app.apiUrl.startsWith('/')&&!app.apiUrl.startsWith('//'))continue
+      const url=new URL(app.apiUrl)
+      if(url.protocol!=='https:'||url.username||url.password||url.search||url.hash)this.error('应用 API 地址必须使用不含凭证的 HTTPS 地址')
+      connections.add(url.origin)
+    }
     for(const [name,value] of Object.entries(env)){
       if(value&&/VITE_.*(PASSWORD|SECRET|PRIVATE_KEY|SERVICE_ROLE|DATABASE_URL|ACCESS_TOKEN|OPENAI_API_KEY|ANTHROPIC_API_KEY)/.test(name))this.error(`Secret-like public setting is forbidden: ${name}`)
       if(!value||!/(URL|AUTHORITY)$/.test(name))continue

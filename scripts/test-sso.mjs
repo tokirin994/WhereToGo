@@ -16,9 +16,9 @@ async function request(url,options={}){
   return response
 }
 const clients=[{id:'portal-web',prefix:'/',audience:'portal-api',api:'/identity/realms/personal/account/'},{id:'smartledger-web',prefix:'/ledger/',audience:'smartledger-api',api:'/ledger-api/api/v1/books'},{id:'travel-web',prefix:'/travel/',audience:'wheretogo-api',api:'/travel-api/api/v1/trips'}]
-async function authorize(client,{silent=false,anonymous=false,scope='openid profile email'}={}){
+async function authorize(client,{silent=false,anonymous=false,scope='openid profile email',callbackPrefix=client.prefix}={}){
   const verifier=randomBytes(32).toString('base64url'),state=randomBytes(16).toString('hex')
-  const redirect=origin+client.prefix+'auth/'+(silent?'silent':'callback')
+  const redirect=origin+callbackPrefix+'auth/'+(silent?'silent':'callback')
   const params=new URLSearchParams({client_id:client.id,redirect_uri:redirect,response_type:'code',scope,state,nonce:randomBytes(16).toString('hex'),code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'})
   if(silent)params.set('prompt','none')
   let response=await request(issuer+'/protocol/openid-connect/auth?'+params)
@@ -41,7 +41,7 @@ async function authorize(client,{silent=false,anonymous=false,scope='openid prof
   ensure(callback.searchParams.get('state')===state,'Authorization state must match')
   if(anonymous){ensure(callback.searchParams.get('error')==='login_required','Signed-out silent request must return login_required');return}
   ensure(!callback.searchParams.has('error')&&callback.searchParams.has('code'),'Expected successful authorization')
-  const tokenResponse=await request(issuer+'/protocol/openid-connect/token',{method:'POST',body:new URLSearchParams({grant_type:'authorization_code',client_id:client.id,redirect_uri:redirect,code:callback.searchParams.get('code'),code_verifier:verifier})})
+  const tokenResponse=await request(issuer+'/protocol/openid-connect/token',{method:'POST',headers:{Origin:origin},body:new URLSearchParams({grant_type:'authorization_code',client_id:client.id,redirect_uri:redirect,code:callback.searchParams.get('code'),code_verifier:verifier})})
   ensure(tokenResponse.status===200,'PKCE token exchange must succeed')
   const token=await tokenResponse.json(),claims=JSON.parse(Buffer.from(token.access_token.split('.')[1],'base64url'))
   ensure(claims.iss===issuer,'Correct issuer')
@@ -58,6 +58,15 @@ const portal=await authorize(clients[0]);ensure(portal.usedPassword,'Initial por
 const ledger=await authorize(clients[1],{silent:true}),travel=await authorize(clients[2],{silent:true})
 ensure(!ledger.usedPassword&&portal.claims.sub===ledger.claims.sub&&portal.claims.sid===ledger.claims.sid,'Both apps must share the same IdP user session')
 pass('门户 → 记账：prompt=none，无二次密码输入，同一账号及 SSO 会话')
+for(const client of [clients[1],clients[2]]){
+  const managed=await authorize(client,{silent:true,callbackPrefix:'/'})
+  ensure(managed.claims.sub===portal.claims.sub&&managed.claims.sid===portal.claims.sid,'Managed service grants must retain the portal identity')
+  const path=client.id==='travel-web'?'/travel-api/api/v1/account/providers':'/ledger-api/api/v1/sync/nutstore/credentials'
+  ensure((await request(origin+path,{headers:{Authorization:'Bearer '+managed.token.access_token}})).status===200,'Managed service account settings must accept their own app token')
+}
+pass('门户账号中心：旅游和记账分别授权到门户静默回调，使用各自令牌读取设置')
+ensure((await request(origin+'/identity/realms/personal/account/',{headers:{Authorization:'Bearer '+portal.token.access_token}})).status===200,'Central profile must remain available')
+pass('统一账号资料：门户自身的 account audience 可读取资料')
 for(let i=0;i<3;i++)for(const client of clients){
   const result=await authorize(client,{silent:true})
   ensure(result.claims.sub===portal.claims.sub&&result.claims.sid===portal.claims.sid&&!result.usedPassword,'Repeated application switches must retain the SSO session')

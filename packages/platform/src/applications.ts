@@ -29,7 +29,10 @@ export function createPlatform(env:Environment,origin:string,development=false){
     const override=app.id==='travel'?env.VITE_WHERE_TO_GO_PUBLIC_URL:app.id==='ledger'?env.VITE_SMARTLEDGER_PUBLIC_URL:app.url
     const url=address(String(override||fallback(app.path,app.devPort))).href.replace(/\/?$/,'/')
     const api=app.id==='travel'?env.VITE_API_BASE_URL:app.id==='ledger'?env.VITE_SMARTLEDGER_API_URL:app.apiUrl
-    const apiUrl=String(api||fallback(app.id==='travel'?'/travel-api':'/ledger-api',app.id==='travel'?8080:8090)).replace(/\/$/,'')
+    const apiFallback=app.id==='travel'?fallback('/travel-api',8080):app.id==='ledger'?fallback('/ledger-api',8090):''
+    const apiUrl=String(api||apiFallback).replace(/\/$/,'')
+    if(apiUrl&&!apiUrl.startsWith('/'))address(apiUrl)
+    if(apiUrl.startsWith('//'))throw new Error('API 地址不能使用相对协议')
     return {...app,url,apiUrl}
   }).filter(app=>app.enabled!==false)
   function application(id:string){const app=applications.find(app=>app.id===id);if(!app)throw new Error('应用尚未注册或已停用');return app}

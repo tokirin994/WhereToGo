@@ -11,6 +11,7 @@ describe('platform application registration and central login',()=>{
   it('can register another application without adding a business import to the portal',()=>{
     const p=createPlatform({VITE_APPLICATIONS_JSON:JSON.stringify([{id:'notes',name:'Notes',label:'笔记',title:'我的笔记',description:'独立笔记',kind:'tool',path:'/notes/',url:'https://notes.example/',devPort:5176,clientId:'notes-web',audience:'notes-api',features:['笔记']}])},origin)
     expect(p.applications).toHaveLength(3);expect(p.application('notes').url).toBe('https://notes.example/')
+    expect(p.application('notes').apiUrl).toBe('')
   })
   it('preserves deep links and trip handoffs through central login',()=>{
     const p=createPlatform({},origin),url=new URL(p.loginUrl('ledger','/ledger/books/abc?travelTripId=123#entry'))
