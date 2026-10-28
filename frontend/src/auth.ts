@@ -46,7 +46,8 @@ export async function signOut(){try{if(localMockAuth){currentUser.value=null;win
 export async function accessToken(){
   await initializeAuth()
   if(localMockAuth&&mockExpiresAt<Date.now()+60000)await mockSession()
-  if(!currentUser.value||(!localMockAuth&&currentUser.value.expired)){currentUser.value=null;throw new Error('登录已过期，请重新登录')}
+  if(!localMockAuth)return identity.accessToken()
+  if(!currentUser.value)throw new Error('登录已过期，请重新登录')
   return currentUser.value.access_token
 }
 export function travelCacheKey(name:string){

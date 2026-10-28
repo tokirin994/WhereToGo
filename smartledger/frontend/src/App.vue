@@ -4,7 +4,7 @@ import type { User } from 'oidc-client-ts'
 import { createIdentitySession } from './identitySession'
 const LedgerWorkspace=defineAsyncComponent(()=>import('./LedgerWorkspace.vue'))
 import { clearNutstoreCredentials } from './nutstoreSync'
-import { authorizedRequest, apiError } from './apiClient'
+import { authorizedRequest, apiError, setSessionTokenProvider } from './apiClient'
 import { portalUrl, appBasePath, appRoutePath, ledgerOnly } from './appLinks'
 
 const apiUrl = import.meta.env.VITE_SMARTLEDGER_API_URL?.replace(/\/$/, '') || ''
@@ -59,9 +59,9 @@ onMounted(async () => {
       mockRefreshTimer=window.setInterval(async()=>{try{const refresh=await fetch(`${authority}/mock-session`,{cache:'no-store',credentials:'omit'});if(!refresh.ok)throw new Error('refresh');const next=await refresh.json();user.value={access_token:next.access_token,profile:next.profile} as User}catch{expired()}},45*60*1000)
       window.history.replaceState({}, document.title, window.location.pathname)
     } else {
+      setSessionTokenProvider(force=>identity.accessToken(force))
       await identity.initialize()
       if(identityCallback)return
-      if(!user.value&&!appRoutePath().startsWith('/auth/')&&!travelHandoff.has('signedOut')){await signIn();return}
       if(appRoutePath().startsWith('/auth/'))return
     }
 
@@ -88,7 +88,7 @@ onMounted(async () => {
     error.value = cause instanceof Error ? cause.message : '初始化登录状态失败。'
   } finally { loading.value = false }
 })
-onUnmounted(()=>{window.removeEventListener('pageshow',resetAuthAction);if(mockRefreshTimer)window.clearInterval(mockRefreshTimer);window.removeEventListener('smartledger-session-expired',expired);window.removeEventListener('smartledger-sign-out',signOut)})
+onUnmounted(()=>{identity.dispose();setSessionTokenProvider();window.removeEventListener('pageshow',resetAuthAction);if(mockRefreshTimer)window.clearInterval(mockRefreshTimer);window.removeEventListener('smartledger-session-expired',expired);window.removeEventListener('smartledger-sign-out',signOut)})
 </script>
 
 <template>

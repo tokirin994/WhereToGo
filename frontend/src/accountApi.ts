@@ -1,4 +1,4 @@
-import { UserManager, WebStorageStateStore } from 'oidc-client-ts'
+import { createIdentitySession } from './identitySession'
 import { accessToken, accountConsoleUrl, currentUser, identity } from './auth'
 import { smartLedgerUrl } from './appLinks'
 
@@ -24,12 +24,12 @@ export async function accountRequest<T>(path:string,method='GET',body?:unknown):
   // Sessions created before the self-service role rollout need a fresh access token.
   // Retry GET only; never replay a mutation whose first outcome may be ambiguous.
   if(method==='GET'&&[401,403].includes(response.status)&&identity.manager){
-    await identity.manager.signinSilent()
+    await identity.accessToken(true)
     response=await send()
   }
   return read<T>(response)
 }
-let ledgerManager:UserManager|undefined
+let ledgerIdentity:ReturnType<typeof createIdentitySession>|undefined
 let ledgerAccess:Promise<string>|undefined
 async function ledgerToken(){
   if(ledgerAccess)return ledgerAccess
@@ -37,11 +37,11 @@ async function ledgerToken(){
     const authority=import.meta.env.VITE_OIDC_AUTHORITY||''
     const ledger=new URL(smartLedgerUrl)
     if(!authority)throw new Error('统一账号服务尚未配置')
-    ledgerManager??=new UserManager({authority,client_id:'smartledger-web',response_type:'code',scope:'openid profile email',redirect_uri:new URL('auth/callback',ledger).href,silent_redirect_uri:new URL('auth/silent',ledger).href,userStore:new WebStorageStateStore({store:sessionStorage}),stateStore:new WebStorageStateStore({store:sessionStorage}),automaticSilentRenew:false,extraQueryParams:{audience:'smartledger-api'}})
-    let user=await ledgerManager.getUser()
-    if(!user||user.expired||user.profile.sub!==currentUser.value?.profile.sub)user=await ledgerManager.signinSilent()
-    if(!user||user.profile.sub!==currentUser.value?.profile.sub)throw new Error('记账登录账号不一致，请重新登录')
-    return user.access_token
+    ledgerIdentity??=createIdentitySession({authority,clientId:'smartledger-web',audience:'smartledger-api',basePath:ledger.pathname,callbackBaseUrl:ledger.href,allowLoopback:import.meta.env.DEV,monitor:false,returnPath:path=>path==='/',changed:()=>{}})
+    await ledgerIdentity.initialize()
+    const token=await ledgerIdentity.accessToken()
+    if(ledgerIdentity.current?.profile.sub!==currentUser.value?.profile.sub)throw new Error('记账登录账号不一致，请重新登录')
+    return token
   })()
   try{return await ledgerAccess}finally{ledgerAccess=undefined}
 }
