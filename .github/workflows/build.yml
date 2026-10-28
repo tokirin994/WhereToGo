@@ -5,12 +5,6 @@ permissions:
 jobs:
   frontend:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        directory: [frontend, smartledger/frontend]
-    defaults:
-      run:
-        working-directory: ${{ matrix.directory }}
     env:
       VITE_LOCAL_MOCK_AUTH: 'false'
       VITE_OIDC_AUTHORITY: https://identity.example.com/realms/personal
@@ -21,7 +15,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+          cache: npm
       - run: npm ci
+      - run: npm run check:boundaries
+      - run: npm test
       - run: npm run build
       - run: npm audit --audit-level=high
   backend:

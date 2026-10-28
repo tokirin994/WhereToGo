@@ -1,10 +1,10 @@
-# TravelAtlas
+# Personal Space · WhereToGo & SmartLedger
 
 TravelAtlas is a map-first place library and trip planner. It includes persistent place and trip APIs, an editable itinerary, and a standalone SmartLedger handoff for travel expenses.
 
 ## Current capabilities
 
-- Personal portal at `/` with independent WhereToGo and SmartLedger application cards, system/light/dark appearance, and app switching from both workspaces. The trip planner lives at `/travel/`; SmartLedger keeps its own origin and storage.
+- Personal portal at `/` with independent WhereToGo and SmartLedger application cards, system/light/dark appearance, and app switching from both workspaces. The trip planner lives at `/travel/`; all three applications have independent source and build artifacts, and each business app retains its own storage.
 - Travel dashboard, searchable status cards, three-step trip wizard with pace/style/budget preferences, editable templates, and system/light/dark appearance.
 - Real WGS84 Leaflet map with saved markers, manual map picking, daily numbered points, visible attribution and configurable tile service. Connecting lines are explicitly straight lines, not navigation routes.
 - Load, create, edit, and delete places through the API. When the API is unavailable, place changes are cached locally in this browser and the UI says so.
@@ -21,7 +21,7 @@ TravelAtlas is a map-first place library and trip planner. It includes persisten
 
 Road routing, destination weather and name search now use bounded public provider calls; real-time navigation opens the external map app. Hotel search redirects to Booking.com with dates and adults; no in-app orders or payments are created. AI provider/model choice and a valid server key remain required. A public community is not integrated. See [service integration and installment acceptance](docs/旅游服务接入与分期验收.md) for configuration, verified scope and browser limitations.
 
-SmartLedger is a separate app under [`smartledger/`](smartledger/) with its own backend and PostgreSQL database. See [the SmartLedger integration design](docs/SmartLedger功能迁移方案.md).
+SmartLedger has an independent frontend under [`apps/ledger/`](apps/ledger/) and its own Java backend and PostgreSQL database under [`smartledger/`](smartledger/). See [the SmartLedger integration design](docs/SmartLedger功能迁移方案.md).
 
 ## Requirements
 
@@ -30,35 +30,27 @@ SmartLedger is a separate app under [`smartledger/`](smartledger/) with its own 
 - Java 8 JDK for the API build. The checked-in Maven Wrapper downloads a checksum-verified Maven distribution.
 - PostgreSQL 16 with PostGIS for the local database. Docker Compose remains available as an optional deployment path.
 
-## Start the web prototype
+## Frontend applications and development
+
+The frontends are independent npm workspaces: `apps/portal`, `apps/travel`, and `apps/ledger`. `packages/identity` owns the shared SSO lifecycle; `packages/platform` owns application registration and switching. The portal centralizes login and account management and never imports another application's business pages.
 
 ```bash
-cd frontend
-npm install
-npm run dev
+npm ci
+npm run dev:portal  # localhost:5173
+npm run dev:travel  # localhost:5175
+npm run dev:ledger  # localhost:5174
 ```
 
-Vite prints the personal portal address (normally `http://localhost:5173/`). Open the trip planner at `http://localhost:5173/travel/` or select WhereToGo on the portal. SmartLedger runs separately at `http://localhost:5174/`.
-For production, configure the HTTPS URLs and OIDC settings from `frontend/.env.example`. The Windows local startup script writes loopback-only development settings into the ignored `.env.local` files.
-
-## Start the local full stack on Windows
-
-After installing PostgreSQL 16/PostGIS and building both APIs, run `scripts/start-local.ps1` from PowerShell. Run `scripts/install-identity.ps1` once to install Keycloak and its separate Java 21 runtime under D:\Application. The startup script starts PostgreSQL, both Java 8 APIs, both Vite frontends and the loopback Keycloak identity service. Open the personal portal at `http://localhost:5173/`, WhereToGo at `http://localhost:5173/travel/`, or SmartLedger at `http://localhost:5174/`. Use `scripts/show-initial-account.ps1` to display the random initial password for portal account `admin`; first login requires a password change. See [unified accounts and encrypted credentials](docs/统一账号与凭证加密.md). Local HTTP identity must not be exposed to a network.
-
-The portal and trip planner share the existing `frontend` Vite service. In production, configure the static host's SPA fallback so `/travel/` serves `index.html`. Set `VITE_SMARTLEDGER_PUBLIC_URL` on the portal frontend, and `VITE_PORTAL_PUBLIC_URL` / `VITE_WHERE_TO_GO_PUBLIC_URL` on the SmartLedger frontend to their actual public addresses. Local development has defaults for ports 5173 and 5174; no extra portal service or database is needed.
-
-Build and type-check the frontend:
+For the Windows full stack, run `scripts/install-identity.ps1` once, then `scripts/start-local.ps1`. Existing Java 8 APIs and PostgreSQL data are retained. See [application architecture and split deployment](docs/门户与独立应用架构及拆分部署.md) for exact settings and migration notes.
 
 ```bash
-cd frontend
-npm run build
-```
-
-Run the frontend checks:
-
-```bash
+npm run check:boundaries
 npm test
+node scripts/build-web.mjs --origin https://portal.example.com --out-dir .local/release/dist
+npm run export:app -- ledger .local/ledger-export
 ```
+
+A unified gateway serves three independent build artifacts at `/`, `/travel/`, and `/ledger/`. Each application can also be exported and deployed alone with `VITE_AUTH_MODE=standalone`; reuse the same identity realm to retain the unified account. Do not put secrets in frontend environment variables.
 
 ## Start the API and PostGIS
 

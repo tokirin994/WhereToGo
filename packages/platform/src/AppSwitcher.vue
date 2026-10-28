@@ -1,0 +1,14 @@
+<script setup lang="ts">
+import {onMounted,onUnmounted,ref} from 'vue'
+import {ArrowUpRight,BookOpen,Compass,House,LayoutGrid} from '@lucide/vue'
+import {browserPlatform} from './applications'
+defineProps<{current:string}>()
+const platform=browserPlatform(import.meta.env),menu=ref<HTMLDetailsElement|null>(null)
+function outside(event:PointerEvent){if(menu.value&&event.target instanceof Node&&!menu.value.contains(event.target))menu.value.open=false}
+function close(){if(menu.value){menu.value.open=false;menu.value.querySelector('summary')?.focus()}}
+onMounted(()=>window.addEventListener('pointerdown',outside));onUnmounted(()=>window.removeEventListener('pointerdown',outside))
+</script>
+<template><details ref="menu" class="application-switcher" @keydown.esc.stop.prevent="close"><summary aria-label="切换应用"><LayoutGrid :size="17"/><span>应用</span></summary><nav aria-label="应用切换"><small>我的应用</small><template v-if="platform.authMode==='portal'"><a :href="platform.accountUrl"><House :size="18"/><span><b>账号与服务</b><small>统一账号、密码与会话管理</small></span><ArrowUpRight :size="14"/></a><a :href="platform.portalUrl" :aria-current="current==='portal'?'page':undefined"><House :size="18"/><span><b>个人门户</b><small>返回应用首页</small></span><ArrowUpRight :size="14"/></a></template><a v-for="app in platform.applications.filter(app=>platform.authMode==='portal'||app.id===current)" :key="app.id" :href="app.url" :aria-current="current===app.id?'page':undefined"><Compass v-if="app.kind==='travel'" :size="18"/><BookOpen v-else-if="app.kind==='ledger'" :size="18"/><LayoutGrid v-else :size="18"/><span><b>{{ app.name }}</b><small>{{ app.label }}</small></span><ArrowUpRight :size="14"/></a></nav></details></template>
+<style scoped>
+.application-switcher{position:relative;flex:none;color:var(--ink,#26352d)}summary{display:flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:8px 11px;border:1px solid var(--border,#e9ece8);border-radius:10px;background:var(--panel,#fff);font-size:12px;font-weight:600;cursor:pointer;list-style:none}summary::-webkit-details-marker{display:none}nav{position:absolute;right:0;top:calc(100% + 10px);z-index:40;width:264px;padding:10px;border:1px solid var(--border,#e9ece8);border-radius:17px;background:var(--panel,#fff);box-shadow:0 14px 45px #13223822}nav>small{display:block;padding:7px 9px 10px;color:var(--muted,#87928c);font-size:10px}a{display:flex;align-items:center;gap:11px;padding:11px 9px;border-radius:11px;text-decoration:none;color:inherit}a:hover,a[aria-current=page]{background:color-mix(in srgb,var(--accent,#346e53) 9%,var(--panel,#fff))}a>svg{flex:none;color:var(--accent,#346e53)}a>span{display:flex;flex:1;flex-direction:column;gap:5px}a b{font-size:12px;font-weight:650}a small{color:var(--muted,#87928c);font-size:10px}summary:focus-visible,a:focus-visible{outline:2px solid var(--accent,#346e53);outline-offset:3px}@media(max-width:390px){summary{padding:8px}summary>span{display:none}}
+</style>

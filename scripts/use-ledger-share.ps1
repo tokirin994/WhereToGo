@@ -27,7 +27,7 @@ $previous=@{}
 try{
  foreach($name in $settings.Keys){$previous[$name]=[Environment]::GetEnvironmentVariable($name,'Process');[Environment]::SetEnvironmentVariable($name,$settings[$name],'Process')}
  $oldPath=$env:PATH;$env:PATH='D:\Application\Nodejs;'+$env:PATH
- Push-Location (Join-Path $repo 'smartledger\frontend')
+ Push-Location (Join-Path $repo 'apps\ledger')
  try{& 'D:\Application\Nodejs\npm.cmd' run build -- --mode share --outDir $output --emptyOutDir;if($LASTEXITCODE -ne 0){throw 'Ledger build failed; the running session was not changed'}}finally{Pop-Location}
 }finally{foreach($name in $previous.Keys){[Environment]::SetEnvironmentVariable($name,$previous[$name],'Process')};$env:PATH=$oldPath}
 if($AllApps -and -not $listener){

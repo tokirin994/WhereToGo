@@ -19,15 +19,22 @@ function Write-LocalWebSettings([string]$path, [hashtable]$values) {
 }
 
 # Loopback development uses real Keycloak accounts. Production builds use separate HTTPS settings.
-Write-LocalWebSettings (Join-Path $repo 'frontend\.env.local') @{
+Write-LocalWebSettings (Join-Path $repo 'apps\portal\.env.local') @{
     VITE_API_BASE_URL='/api'; VITE_LOCAL_MOCK_AUTH='false'; VITE_OIDC_AUTHORITY='http://localhost:8091/realms/local';
-    VITE_OIDC_CLIENT_ID='wheretogo-web'; VITE_OIDC_AUDIENCE='wheretogo-api';
-    VITE_SMARTLEDGER_API_URL='http://localhost:8090'; VITE_SMARTLEDGER_PUBLIC_URL='http://localhost:5174'
+    VITE_OIDC_CLIENT_ID='portal-web'; VITE_OIDC_AUDIENCE='portal-api';
+    VITE_SMARTLEDGER_API_URL='http://localhost:8090'; VITE_SMARTLEDGER_PUBLIC_URL='http://localhost:5174/'; VITE_WHERE_TO_GO_PUBLIC_URL='http://localhost:5175/'; VITE_AUTH_MODE='portal'
 }
-Write-LocalWebSettings (Join-Path $repo 'smartledger\frontend\.env.local') @{
+Write-LocalWebSettings (Join-Path $repo 'apps\ledger\.env.local') @{
     VITE_SMARTLEDGER_API_URL='http://localhost:8090'; VITE_LOCAL_MOCK_AUTH='false'; VITE_OIDC_AUTHORITY='http://localhost:8091/realms/local';
     VITE_OIDC_CLIENT_ID='smartledger-web'; VITE_OIDC_AUDIENCE='smartledger-api';
-    VITE_PORTAL_PUBLIC_URL='http://localhost:5173/'; VITE_WHERE_TO_GO_PUBLIC_URL='http://localhost:5173/travel/'
+    VITE_PORTAL_PUBLIC_URL='http://localhost:5173/'; VITE_WHERE_TO_GO_PUBLIC_URL='http://localhost:5175/'; VITE_AUTH_MODE='portal'
+}
+
+Write-LocalWebSettings (Join-Path $repo 'apps\travel\.env.local') @{
+    VITE_API_BASE_URL='/api'; VITE_LOCAL_MOCK_AUTH='false'; VITE_OIDC_AUTHORITY='http://localhost:8091/realms/local';
+    VITE_OIDC_CLIENT_ID='travel-web'; VITE_OIDC_AUDIENCE='wheretogo-api'; VITE_AUTH_MODE='portal';
+    VITE_PORTAL_PUBLIC_URL='http://localhost:5173/'; VITE_WHERE_TO_GO_PUBLIC_URL='http://localhost:5175/';
+    VITE_SMARTLEDGER_PUBLIC_URL='http://localhost:5174/'; VITE_SMARTLEDGER_API_URL='http://localhost:8090'
 }
 
 function Test-Listening($port) {
@@ -70,7 +77,7 @@ if (-not (Test-Listening 8090)) {
     $env:SPRING_DATASOURCE_PASSWORD = Get-Content 'D:\Application\PostgreSQL16\smartledger-password.txt' -Raw
     $env:SMARTLEDGER_OIDC_ISSUER = 'http://localhost:8091/realms/local'
     $env:SMARTLEDGER_OIDC_AUDIENCE = 'smartledger-api'
-    $env:SMARTLEDGER_ALLOWED_ORIGINS = 'http://localhost:5173,http://localhost:5174'
+    $env:SMARTLEDGER_ALLOWED_ORIGINS = 'http://localhost:5173,http://localhost:5174,http://localhost:5175'
     $env:SMARTLEDGER_PUBLIC_URL = 'http://localhost:5174'
     $env:SMARTLEDGER_CREDENTIAL_KEY_FILE = Join-Path $appHome 'secrets\credential-keyring.json'
     $env:PORT = '8090'
@@ -101,6 +108,7 @@ if (-not (Test-Listening 8080) -and (Test-Path 'D:\Application\PostgreSQL16\pgsq
     $env:SPRING_DATASOURCE_URL = 'jdbc:postgresql://localhost:5432/travelatlas'
     $env:SPRING_DATASOURCE_USERNAME = 'travelatlas'
     $env:SPRING_DATASOURCE_PASSWORD = Get-Content 'D:\Application\PostgreSQL16\travelatlas-password.txt' -Raw
+    $env:APP_CORS_ALLOWED_ORIGINS='http://localhost:5173,http://localhost:5175'
     $env:PORT = '8080'
     try { Start-Process -FilePath $jdk -ArgumentList @('-jar', (Join-Path $repo 'backend\target\travelatlas-api-0.1.0-SNAPSHOT.jar'), '--server.address=127.0.0.1') `
         -WorkingDirectory (Join-Path $repo 'backend') -WindowStyle Hidden `
@@ -116,27 +124,25 @@ elseif (-not (Test-Listening 8080)) {
     Write-Warning 'WhereToGo API was not started because the PostgreSQL PostGIS extension is not installed yet.'
 }
 
-if (-not (Test-Listening 5174)) {
-    Start-Process -FilePath $node -ArgumentList @((Join-Path $repo 'smartledger\frontend\node_modules\vite\bin\vite.js'), '--host', '127.0.0.1', '--port', '5174') `
-        -WorkingDirectory (Join-Path $repo 'smartledger\frontend') -WindowStyle Hidden `
-        -RedirectStandardOutput (Join-Path $logs 'smartledger-web.out.log') `
-        -RedirectStandardError (Join-Path $logs 'smartledger-web.err.log') | Out-Null
-}
-
-if (-not (Test-Listening 5173)) {
-    Start-Process -FilePath $node -ArgumentList @((Join-Path $repo 'frontend\node_modules\vite\bin\vite.js'), '--host', '127.0.0.1', '--port', '5173') `
-        -WorkingDirectory (Join-Path $repo 'frontend') -WindowStyle Hidden `
-        -RedirectStandardOutput (Join-Path $logs 'wheretogo-web.out.log') `
-        -RedirectStandardError (Join-Path $logs 'wheretogo-web.err.log') | Out-Null
+foreach($app in @(@('portal',5173),@('travel',5175),@('ledger',5174))){
+    if(-not(Test-Listening $app[1])){
+        $directory=Join-Path $repo "apps\$($app[0])"
+        $npmCli=Join-Path (Split-Path $node) 'node_modules\npm\bin\npm-cli.js'
+        Start-Process -FilePath $node -ArgumentList @($npmCli,'run','dev','--workspace',"@personal/$($app[0])") `
+            -WorkingDirectory $repo -WindowStyle Hidden `
+            -RedirectStandardOutput (Join-Path $logs "$($app[0])-web.out.log") `
+            -RedirectStandardError (Join-Path $logs "$($app[0])-web.err.log") | Out-Null
+    }
 }
 
 Write-Host 'SmartLedger Web: http://localhost:5174'
 Write-Host 'Personal Portal: http://localhost:5173/'
-Write-Host 'WhereToGo Web: http://localhost:5173/travel/'
+Write-Host 'WhereToGo Web: http://localhost:5175/'
 Write-Host 'SmartLedger API: http://localhost:8090/actuator/health'
 Wait-Listening 8090
 Wait-Listening 5174
 Wait-Listening 5173
+Wait-Listening 5175
 if (Test-Listening 8080) { Write-Host 'WhereToGo API: http://localhost:8080/api/v1/health' }
 Write-Host 'Unified account: http://localhost:5173/account/'
 Write-Host 'Identity administration: http://localhost:8091/admin/'

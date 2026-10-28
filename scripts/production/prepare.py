@@ -43,11 +43,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('portal', 'ledger', 'identity-host', 'travel-api-host', 'ledger-api-host', 'email', 'admin-cidr', 'backup-recipient-file'):
         parser.add_argument('--' + name, required=True)
+    parser.add_argument('--travel', help='Optional independent travel HTTPS origin')
     args = parser.parse_args()
     if os.name != 'posix' or os.geteuid() != 0:
         parser.error('Run on the Linux server with sudo; Windows local settings are not modified')
     try:
         portal, ledger = origin(args.portal), origin(args.ledger)
+        travel = origin(args.travel) if args.travel else portal + '/travel'
         hosts = [hostname(value) for value in (args.identity_host, args.travel_api_host, args.ledger_api_host)]
         if len(set([portal[8:], ledger[8:], *hosts])) != 5:
             raise ValueError('Use five distinct hostnames for the two SPAs and three server endpoints')
@@ -90,10 +92,12 @@ def main():
     config.update(realm='personal', sslRequired='all', registrationAllowed=False, resetPasswordAllowed=False)
     config.pop('users', None)
     for client in config['clients']:
-        if client['clientId'] not in ('smartledger-web', 'wheretogo-web'):
+        if client['clientId'] not in ('smartledger-web', 'portal-web', 'travel-web'):
             raise ValueError('Review an unexpected identity client before generating production settings')
-        base = ledger if client['clientId'] == 'smartledger-web' else portal
-        client.update(rootUrl=base, redirectUris=[base + '/auth/callback', base + '/auth/silent'], webOrigins=[base])
+        base = {'smartledger-web':ledger,'portal-web':portal,'travel-web':travel}[client['clientId']]
+        client.update(rootUrl=base, redirectUris=[base + '/auth/callback', base + '/auth/silent'], webOrigins=[urlsplit(base).scheme+'://'+urlsplit(base).netloc])
+        client['redirectUris']=list(dict.fromkeys(client['redirectUris']+[portal+'/auth/silent']))
+        client['webOrigins']=list(dict.fromkeys(client['webOrigins']+[portal]))
         client['attributes'].update({'post.logout.redirect.uris': base + '/auth/signed-out', 'frontchannel.logout.url': base + '/auth/frontchannel'})
         client['protocolMappers'] = [mapper for mapper in client.get('protocolMappers', []) if mapper.get('name') != 'portal-roles'] + [{
             'name': 'portal-roles', 'protocol': 'openid-connect', 'protocolMapper': 'oidc-usermodel-realm-role-mapper',
@@ -107,9 +111,11 @@ def main():
         'VITE_LOCAL_MOCK_AUTH': 'false', 'VITE_OIDC_AUTHORITY': f'https://{hosts[0]}/realms/personal',
         'VITE_SMARTLEDGER_API_URL': 'https://' + hosts[2],
     }
-    portal_env = {**common, 'VITE_OIDC_CLIENT_ID': 'wheretogo-web', 'VITE_OIDC_AUDIENCE': 'wheretogo-api', 'VITE_API_BASE_URL': 'https://' + hosts[1], 'VITE_SMARTLEDGER_PUBLIC_URL': ledger}
-    ledger_env = {**common, 'VITE_OIDC_CLIENT_ID': 'smartledger-web', 'VITE_OIDC_AUDIENCE': 'smartledger-api', 'VITE_PORTAL_PUBLIC_URL': portal, 'VITE_WHERE_TO_GO_PUBLIC_URL': portal + '/travel/'}
-    for name, settings in (('portal-pages.env', portal_env), ('ledger-pages.env', ledger_env)):
+    portal_env = {**common, 'VITE_OIDC_CLIENT_ID': 'portal-web', 'VITE_OIDC_AUDIENCE': 'portal-api', 'VITE_API_BASE_URL': 'https://' + hosts[1], 'VITE_SMARTLEDGER_PUBLIC_URL': ledger}
+    ledger_env = {**common, 'VITE_OIDC_CLIENT_ID': 'smartledger-web', 'VITE_OIDC_AUDIENCE': 'smartledger-api', 'VITE_PORTAL_PUBLIC_URL': portal, 'VITE_WHERE_TO_GO_PUBLIC_URL': travel+'/'}
+    portal_env.update(VITE_WHERE_TO_GO_PUBLIC_URL=travel+'/',VITE_AUTH_MODE='portal')
+    travel_env={**portal_env,'VITE_OIDC_CLIENT_ID':'travel-web','VITE_OIDC_AUDIENCE':'wheretogo-api','VITE_APP_BASE_PATH':urlsplit(travel+'/').path}
+    for name, settings in (('portal-pages.env', portal_env), ('travel-pages.env', travel_env), ('ledger-pages.env', ledger_env)):
         write_once(RUNTIME / name, '\n'.join(f'{key}={value}' for key, value in settings.items()) + '\n')
     print(f'Production state generated in {RUNTIME}. No passwords or encryption keys have been printed.')
     print('Copy only portal-pages.env / ledger-pages.env values to Pages. Keep the secrets directory and backup private key out of GitHub.')

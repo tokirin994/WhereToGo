@@ -1,3 +1,5 @@
+> 前端已迁至 `../apps/ledger/`。请在仓库根目录执行 `npm ci`，使用 `npm run dev:ledger` / `npm run build:ledger`。以下历史说明中的 frontend 路径以新目录为准。独立导出和统一部署见 [应用架构文档](../docs/门户与独立应用架构及拆分部署.md)。
+
 # SmartLedger（独立记账应用）
 
 SmartLedger 是 WhereToGo 仓库内单独运行的记账应用。它有自己的 Vue Web 前端、Java 8 / Spring Boot API、PostgreSQL 数据库、OIDC 登录和部署配置；WhereToGo 仅提供旅行账本入口，旅行账本按当前用户与旅行 ID 幂等关联。

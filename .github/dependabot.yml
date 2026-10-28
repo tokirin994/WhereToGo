@@ -1,10 +1,7 @@
 version: 2
 updates:
   - package-ecosystem: npm
-    directory: /frontend
-    schedule: { interval: weekly }
-  - package-ecosystem: npm
-    directory: /smartledger/frontend
+    directory: /
     schedule: { interval: weekly }
   - package-ecosystem: maven
     directory: /backend

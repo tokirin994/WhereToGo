@@ -28,7 +28,7 @@ docker compose exec -T identity /opt/keycloak/bin/kcadm.sh update realms/persona
  -s registrationAllowed=true -s registrationEmailAsUsername=false -s loginWithEmailAllowed=true \
  -s duplicateEmailsAllowed=false -s editUsernameAllowed=false -s bruteForceProtected=true
 # Account REST requires an account audience; keep API audiences separate.
-docker compose exec -T identity /opt/keycloak/bin/kcadm.sh get clients -r personal --config "$container_work/admin.json" -q clientId=wheretogo-web --fields id > "$work/client.json"
+docker compose exec -T identity /opt/keycloak/bin/kcadm.sh get clients -r personal --config "$container_work/admin.json" -q clientId=portal-web --fields id > "$work/client.json"
 portal_id=$(python -c 'import json,sys;print(json.load(open(sys.argv[1]))[0]["id"])' "$work/client.json")
 docker compose exec -T identity /opt/keycloak/bin/kcadm.sh get "clients/$portal_id/protocol-mappers/models" -r personal --config "$container_work/admin.json" > "$work/mappers.json"
 mapper_id=$(python -c 'import json,sys;print(next((m["id"] for m in json.load(open(sys.argv[1])) if m["name"]=="personal-account-audience"),""))' "$work/mappers.json")

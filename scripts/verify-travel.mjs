@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { randomBytes, createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
-const identity='http://localhost:8091',issuer=identity+'/realms/local',origin='http://localhost:5173',api='http://localhost:8080'
+const identity='http://localhost:8091',issuer=identity+'/realms/local',origin='http://localhost:5175',api='http://localhost:8080'
 if(!process.env.IDENTITY_TEST_ADMIN_PASSWORD||!process.env.TRAVEL_TEST_DB_PASSWORD)throw Error('Use scripts/test-travel.ps1 to supply transient local credentials')
 let adminToken,userId,token
 const results=[]
@@ -24,12 +24,12 @@ try{
   const username='qa-travel-'+randomBytes(8).toString('hex'),password='Aa1!'+randomBytes(24).toString('base64url')
   const created=await admin('/users','POST',{username,enabled:true,email:username+'@example.test',firstName:'Travel',lastName:'QA',emailVerified:true,credentials:[{type:'password',value:password,temporary:false}]});assert.equal(created.status,201);userId=created.headers.get('location').split('/').at(-1)
   const verifier=randomBytes(32).toString('base64url'),state=randomBytes(16).toString('hex')
-  let response=await session(issuer+'/protocol/openid-connect/auth?'+new URLSearchParams({client_id:'wheretogo-web',redirect_uri:origin+'/auth/callback',response_type:'code',scope:'openid profile email',state,code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'}))
+  let response=await session(issuer+'/protocol/openid-connect/auth?'+new URLSearchParams({client_id:'travel-web',redirect_uri:origin+'/auth/callback',response_type:'code',scope:'openid profile email',state,code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'}))
   const html=await response.text(),form=html.match(/<form\b[^>]*id="kc-form-login"[^>]*>/);assert.ok(form,'Login form')
   const action=decode(form[0].match(/action="([^"]+)"/)[1]);response=await session(action,{method:'POST',body:new URLSearchParams({username,password,credentialId:''}),headers:{'Content-Type':'application/x-www-form-urlencoded'}})
   let location=response.headers.get('location');for(let i=0;i<6&&location&&!location.startsWith(origin+'/auth/callback');i++){response=await session(new URL(location,issuer));location=response.headers.get('location')}
   assert.ok(location?.startsWith(origin+'/auth/callback'),'PKCE login callback');const callback=new URL(location);assert.equal(callback.searchParams.get('state'),state)
-  token=(await json(await session(issuer+'/protocol/openid-connect/token',{method:'POST',body:new URLSearchParams({grant_type:'authorization_code',client_id:'wheretogo-web',redirect_uri:origin+'/auth/callback',code:callback.searchParams.get('code'),code_verifier:verifier})}))).access_token
+  token=(await json(await session(issuer+'/protocol/openid-connect/token',{method:'POST',body:new URLSearchParams({grant_type:'authorization_code',client_id:'travel-web',redirect_uri:origin+'/auth/callback',code:callback.searchParams.get('code'),code_verifier:verifier})}))).access_token
   pass('Real OIDC authorization code + PKCE login')
   assert.deepEqual(await json(await call('/api/v1/trips')),[]);pass('New account starts without demo trips')
   const prefs={pace:'balanced',budgetLevel:'standard',budgetAmount:1000,travelers:2,transport:'drive',departure:'',styles:['nature'],mustDo:'',avoid:'',checklist:[{id:'qa-check',text:'Check tickets',done:false}]}

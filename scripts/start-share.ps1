@@ -60,7 +60,7 @@ Save-State
 try{
   if(-not $Resume){
   Write-Host 'Switching the local development processes to the isolated sharing session...'
-  foreach($port in @(5173,5174,8080,8090,8091)){
+  foreach($port in @(5173,5174,5175,8080,8090,8091)){
     $listeners=@(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
     foreach($ownerId in ($listeners.OwningProcess | Sort-Object -Unique)){
       $process=Get-CimInstance Win32_Process -Filter "ProcessId=$ownerId"
@@ -129,12 +129,12 @@ REVOKE ALL ON DATABASE :"name" FROM PUBLIC;
   $env:VITE_OIDC_AUTHORITY="$base/identity/realms/share"
   $env:VITE_API_BASE_URL="$base/travel-api";$env:VITE_SMARTLEDGER_API_URL="$base/ledger-api"
   $env:VITE_SMARTLEDGER_PUBLIC_URL="$base/ledger/";$env:VITE_PORTAL_PUBLIC_URL="$base/";$env:VITE_WHERE_TO_GO_PUBLIC_URL="$base/travel/"
-  foreach($kind in @('portal','ledger')){
-    if($state.ledgerOnly -and $kind -eq 'portal'){continue}
-    $directory=if($kind -eq 'portal'){Join-Path $repo 'frontend'}else{Join-Path $repo 'smartledger\frontend'}
-    $env:VITE_OIDC_CLIENT_ID=if($kind -eq 'portal'){'wheretogo-web'}else{'smartledger-web'}
-    $env:VITE_OIDC_AUDIENCE=if($kind -eq 'portal'){'wheretogo-api'}else{'smartledger-api'}
-    $env:VITE_APP_BASE_PATH=if($kind -eq 'portal'){'/'}else{'/ledger/'}
+  foreach($kind in @('portal','travel','ledger')){
+    if($state.ledgerOnly -and $kind -ne 'ledger'){continue}
+    $directory=Join-Path $repo "apps\$kind"
+    $env:VITE_OIDC_CLIENT_ID=@{portal='portal-web';travel='travel-web';ledger='smartledger-web'}[$kind]
+    $env:VITE_OIDC_AUDIENCE=@{portal='portal-api';travel='wheretogo-api';ledger='smartledger-api'}[$kind]
+    $env:VITE_APP_BASE_PATH=if($kind -eq 'portal'){'/'}else{"/$kind/"}
     Push-Location $directory
     try{& 'D:\Application\Nodejs\npm.cmd' run build -- --mode share --outDir (Join-Path $root "dist\$kind") --emptyOutDir;if($LASTEXITCODE -ne 0){throw "Frontend build failed: $kind"}}finally{Pop-Location}
   }
@@ -148,8 +148,8 @@ REVOKE ALL ON DATABASE :"name" FROM PUBLIC;
   if($state.ledgerOnly){$realm.clients=@($realm.clients | Where-Object clientId -eq 'smartledger-web');$realm.displayName='SmartLedger · 临时体验'}
   $realm.users=@($secrets.accounts | ForEach-Object {@{id=$_.id;username=$_.username;enabled=$true;email="$($_.username)@example.invalid";emailVerified=$false;firstName='体验';lastName=$_.username;requiredActions=@();credentials=@(@{type='password';value=(Plain $_.password);temporary=$false})}})
   foreach($client in $realm.clients){
-    $app=if($client.clientId -eq 'smartledger-web'){"$base/ledger/"}else{"$base/"}
-    $client.rootUrl=$app;$client.baseUrl=$app;$client.redirectUris=@("${app}auth/callback","${app}auth/silent");$client.webOrigins=@($base)
+    $app=$base+(@{'portal-web'='/';'travel-web'='/travel/';'smartledger-web'='/ledger/'}[$client.clientId])
+    $client.rootUrl=$app;$client.baseUrl=$app;$client.redirectUris=@("${app}auth/callback","${app}auth/silent", "$base/auth/silent") | Select-Object -Unique;$client.webOrigins=@($base)
     $client.attributes.'post.logout.redirect.uris'="${app}auth/signed-out";$client.attributes.'frontchannel.logout.url'="${app}auth/frontchannel"
   }
   $import=Join-Path $identity 'data\import';New-Item -ItemType Directory -Force -Path $import | Out-Null

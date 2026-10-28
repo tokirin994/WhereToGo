@@ -15,7 +15,7 @@ async function request(url,options={}){
   }
   return response
 }
-const clients=[{id:'wheretogo-web',prefix:'/',audience:'wheretogo-api',api:'/travel-api/api/v1/trips'},{id:'smartledger-web',prefix:'/ledger/',audience:'smartledger-api',api:'/ledger-api/api/v1/books'}]
+const clients=[{id:'portal-web',prefix:'/',audience:'portal-api',api:'/identity/realms/personal/account/'},{id:'smartledger-web',prefix:'/ledger/',audience:'smartledger-api',api:'/ledger-api/api/v1/books'},{id:'travel-web',prefix:'/travel/',audience:'wheretogo-api',api:'/travel-api/api/v1/trips'}]
 async function authorize(client,{silent=false,anonymous=false,scope='openid profile email'}={}){
   const verifier=randomBytes(32).toString('base64url'),state=randomBytes(16).toString('hex')
   const redirect=origin+client.prefix+'auth/'+(silent?'silent':'callback')
@@ -55,26 +55,27 @@ async function refresh(client,token){
 }
 await authorize(clients[1],{silent:true,anonymous:true});pass('匿名进入子应用：静默认证返回未登录，不显示登录表单')
 const portal=await authorize(clients[0]);ensure(portal.usedPassword,'Initial portal login must authenticate');pass('门户首次登录：真实账号、授权码及 PKCE 验证通过')
-const ledger=await authorize(clients[1],{silent:true})
+const ledger=await authorize(clients[1],{silent:true}),travel=await authorize(clients[2],{silent:true})
 ensure(!ledger.usedPassword&&portal.claims.sub===ledger.claims.sub&&portal.claims.sid===ledger.claims.sid,'Both apps must share the same IdP user session')
 pass('门户 → 记账：prompt=none，无二次密码输入，同一账号及 SSO 会话')
 for(let i=0;i<3;i++)for(const client of clients){
   const result=await authorize(client,{silent:true})
   ensure(result.claims.sub===portal.claims.sub&&result.claims.sid===portal.claims.sid&&!result.usedPassword,'Repeated application switches must retain the SSO session')
 }
-pass('门户、旅行及记账反复切换：6 次静默授权均通过')
+pass('门户、旅行及记账反复切换：9 次静默授权均通过')
 const openidOnly=await authorize(clients[1],{silent:true,scope:'openid'})
 ensure(openidOnly.claims.sub===portal.claims.sub,'Session-only scope must retain the subject');pass('会话检查使用的 openid 授权仍识别为同一账号')
-let travelToken=portal.token,ledgerToken=ledger.token
-for(let i=0;i<3;i++){travelToken=await refresh(clients[0],travelToken);ledgerToken=await refresh(clients[1],ledgerToken)}
-pass('两应用分别续期并轮换 refresh token：6 次通过')
-for(const [client,token] of [[clients[0],travelToken],[clients[1],ledgerToken]]){
+let portalToken=portal.token,travelToken=travel.token,ledgerToken=ledger.token
+for(let i=0;i<3;i++){portalToken=await refresh(clients[0],portalToken);travelToken=await refresh(clients[2],travelToken);ledgerToken=await refresh(clients[1],ledgerToken)}
+pass('门户及两应用分别续期并轮换 refresh token：9 次通过')
+for(const [client,token] of [[clients[0],portalToken],[clients[2],travelToken],[clients[1],ledgerToken]]){
   ensure((await request(origin+client.api,{headers:{Authorization:'Bearer '+token.access_token}})).status===200,'Refreshed token must read its own API')
 }
 ensure((await request(origin+clients[1].api,{headers:{Authorization:'Bearer '+travelToken.access_token}})).status===401,'Travel token must not access ledger API')
-ensure((await request(origin+clients[0].api,{headers:{Authorization:'Bearer '+ledgerToken.access_token}})).status===401,'Ledger token must not access travel API')
-pass('续期后 API 可用，旅游和记账 token 的 audience 隔离保持有效')
-let logout=await request(issuer+'/protocol/openid-connect/logout?'+new URLSearchParams({client_id:clients[0].id,id_token_hint:travelToken.id_token,post_logout_redirect_uri:origin+'/auth/signed-out',state:randomBytes(16).toString('hex')}))
+ensure((await request(origin+clients[2].api,{headers:{Authorization:'Bearer '+ledgerToken.access_token}})).status===401,'Ledger token must not access travel API')
+for(const client of [clients[1],clients[2]])ensure((await request(origin+client.api,{headers:{Authorization:'Bearer '+portalToken.access_token}})).status===401,'Portal token must not be used as an application business token')
+pass('续期后 API 可用；门户、旅游、记账 token 的 audience 隔离保持有效')
+let logout=await request(issuer+'/protocol/openid-connect/logout?'+new URLSearchParams({client_id:clients[0].id,id_token_hint:portalToken.id_token,post_logout_redirect_uri:origin+'/auth/signed-out',state:randomBytes(16).toString('hex')}))
 let logoutTarget=logout.headers.get('location')
 if(logout.status!==302){
   const html=await logout.text()

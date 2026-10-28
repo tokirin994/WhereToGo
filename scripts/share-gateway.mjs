@@ -31,9 +31,10 @@ function proxy(req,res,pathname,port,prefix,identity=false){
   req.on('aborted',()=>upstream.destroy())
   req.pipe(upstream)
 }
-function serve(req,res,pathname,ledger){
-  const root=ledger&&state.ledgerDist?path.resolve(state.ledgerDist):path.resolve(state.root,'dist',ledger?'ledger':'portal')
-  const route=ledger?pathname.slice('/ledger/'.length):pathname.slice(1)
+function serve(req,res,pathname,app){
+  const ledger=app==='ledger'
+  const root=ledger&&state.ledgerDist?path.resolve(state.ledgerDist):path.resolve(state.root,'dist',app)
+  const route=app==='portal'?pathname.slice(1):pathname.slice(('/'+app+'/').length)
   let file=path.resolve(root,route||'index.html')
   if(path.relative(root,file).startsWith('..')||path.isAbsolute(path.relative(root,file))||route.split('/').some(part=>part.startsWith('.')||part==='_headers'||part==='_redirects'))return page(res,404,'页面不存在。')
   let stat
@@ -88,9 +89,9 @@ const server=http.createServer((req,res)=>{
     }
   }
   if(!['GET','HEAD'].includes(req.method))return page(res,405,'不支持此请求方式。')
-  if(pathname==='/ledger'){res.writeHead(308,{Location:'/ledger/',...baseHeaders});return res.end()}
+  if(['/ledger','/travel'].includes(pathname)){res.writeHead(308,{Location:pathname+'/',...baseHeaders});return res.end()}
   if(!state.ready)return page(res,503,'分享环境正在准备，请稍后刷新。')
-  serve(req,res,pathname,pathname.startsWith('/ledger/'))
+  serve(req,res,pathname,pathname.startsWith('/ledger/')?'ledger':pathname.startsWith('/travel/')?'travel':'portal')
 })
 server.requestTimeout=100000;server.headersTimeout=15000;server.maxHeadersCount=80
 server.listen(18180,'127.0.0.1',()=>process.stdout.write('Sharing gateway bound to loopback:18180\n'))

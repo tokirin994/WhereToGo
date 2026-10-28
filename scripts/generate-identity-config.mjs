@@ -16,10 +16,10 @@ const portal=origin('PORTAL_ORIGIN'),ledger=origin('LEDGER_ORIGIN')
 const config=JSON.parse(readFileSync(resolve(root,'identity/realm-local.json'),'utf8'))
 config.realm=realm;config.sslRequired='all';delete config.users
 for(const client of config.clients){
-  const base=client.clientId==='smartledger-web'?ledger:portal
+  const base=(client.clientId==='smartledger-web'?ledger:client.clientId==='travel-web'?(process.env.TRAVEL_ORIGIN||portal+'/travel/'):portal).replace(/\/$/,'')
   client.rootUrl=base
-  client.redirectUris=[base+'/auth/callback',base+'/auth/silent']
-  client.webOrigins=[base]
+  client.redirectUris=[...new Set([base+'/auth/callback',base+'/auth/silent',portal+'/auth/silent'])]
+  client.webOrigins=[...new Set([new URL(base).origin,new URL(portal).origin])]
   client.attributes['post.logout.redirect.uris']=base+'/auth/signed-out'
   client.attributes['frontchannel.logout.url']=base+'/auth/frontchannel'
   client.protocolMappers.push({name:'portal-roles',protocol:'openid-connect',protocolMapper:'oidc-usermodel-realm-role-mapper',config:{'claim.name':'portal_roles','jsonType.label':'String',multivalued:'true','id.token.claim':'true','access.token.claim':'true','userinfo.token.claim':'true'}})

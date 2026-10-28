@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 $secretsHome = 'D:\Application\WhereToGo\secrets'
-$marker = Join-Path $secretsHome 'identity-configuration-v3'
+$marker = Join-Path $secretsHome 'identity-configuration-v4-applications'
 if (Test-Path $marker) { return }
 $bootstrap = Import-Clixml (Join-Path $secretsHome 'identity-bootstrap.clixml')
 $password = [Net.NetworkCredential]::new('', $bootstrap.AdminPassword).Password
@@ -26,7 +26,12 @@ Admin-Request '/users/local-demo-user/role-mappings/realm' 'Post' @($role) | Out
 $management = (Admin-Request '/clients?clientId=realm-management')[0]
 $adminRole = Admin-Request "/clients/$($management.id)/roles/realm-admin"
 Admin-Request "/users/local-demo-user/role-mappings/clients/$($management.id)" 'Post' @($adminRole) | Out-Null
-foreach ($clientName in @('wheretogo-web','smartledger-web')) {
+$template=Get-Content (Join-Path (Split-Path -Parent $PSScriptRoot) 'identity\realm-local.json') -Raw -Encoding utf8 | ConvertFrom-Json
+foreach($definition in $template.clients){
+    $existing=@(Admin-Request "/clients?clientId=$($definition.clientId)")
+    if(-not $existing.Count){Admin-Request '/clients' 'Post' $definition | Out-Null}
+}
+foreach ($clientName in @('portal-web','travel-web','smartledger-web')) {
     $client = (Admin-Request "/clients?clientId=$clientName")[0]
     $basic = (Admin-Request '/client-scopes') | Where-Object name -eq 'basic' | Select-Object -First 1
     if (-not $basic) { throw 'Required OIDC basic client scope is missing' }

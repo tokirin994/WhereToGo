@@ -1,7 +1,7 @@
 // Uses only the isolated QA accounts created by test-registration.mjs.
 import {randomBytes} from 'node:crypto'
 import {createRequire} from 'node:module'
-const require=createRequire(new URL('../frontend/package.json',import.meta.url))
+const require=createRequire(new URL('../apps/portal/package.json',import.meta.url))
 const {JSDOM}=require('jsdom')
 export async function accountAcceptance(context){
   const {origin,issuer,runId,first,second,ledgerA,ledgerB,begin,exchange,login,client,pass,assert}=context
@@ -67,29 +67,30 @@ export async function accountAcceptance(context){
   }
   pass('Device sessions are listed and can only be revoked by their owner')
 
+  const managedTravel=await login(first,false,'travel'),otherTravel=await login(second,false,'travel')
   const providers='/travel-api/api/v1/account/providers'
   const fakeKey='qa-private-key-'+runId,config={apiKey:fakeKey,baseUrl:'https://api.deepseek.com/v1',model:'qa-model',protocol:'chat-completions',tokenField:'max_tokens',authMode:'api-key',enabled:true}
-  const saved=await ok(await call(providers+'/deepseek',fresh.token,'PUT',config),200,'Save personal AI key')
+  const saved=await ok(await call(providers+'/deepseek',managedTravel.token,'PUT',config),200,'Save personal AI key')
   assert(!JSON.stringify(saved).includes(fakeKey)&&!JSON.stringify(saved).includes('ciphertext')&&!JSON.stringify(saved).includes('"apiKey"'),'API must not disclose credentials')
   assert(saved.providers.find(row=>row.provider==='deepseek')?.keyMasked,'A saved key must have a masked status')
-  const other=await (await call(providers,b.token)).json()
+  const other=await (await call(providers,otherTravel.token)).json()
   assert(!other.providers.length,'Provider credentials must not cross accounts')
-  await ok(await call(providers+'/deepseek',b.token,'DELETE'),200,'Other account delete')
-  assert((await (await call(providers,fresh.token)).json()).providers.length===1,'Another user must not delete credentials')
+  await ok(await call(providers+'/deepseek',otherTravel.token,'DELETE'),200,'Other account delete')
+  assert((await (await call(providers,managedTravel.token)).json()).providers.length===1,'Another user must not delete credentials')
   pass('Personal AI keys are saved with masked responses and isolated account ownership')
-  await ok(await call(providers+'/deepseek',fresh.token,'PUT',{...config,apiKey:'',model:'qa-updated-model'}),200,'Keep key while changing model')
-  assert((await (await call('/travel-api/api/v1/planner/status',fresh.token)).json()).aiAvailable,'The planner must use the personal AI configuration')
-  const changedAddress=await call(providers+'/deepseek',fresh.token,'PUT',{...config,apiKey:'',baseUrl:'https://api.openai.com/v1'})
+  await ok(await call(providers+'/deepseek',managedTravel.token,'PUT',{...config,apiKey:'',model:'qa-updated-model'}),200,'Keep key while changing model')
+  assert((await (await call('/travel-api/api/v1/planner/status',managedTravel.token)).json()).aiAvailable,'The planner must use the personal AI configuration')
+  const changedAddress=await call(providers+'/deepseek',managedTravel.token,'PUT',{...config,apiKey:'',baseUrl:'https://api.openai.com/v1'})
   assert(changedAddress.status===400,'Moving a key to another provider must require re-entry')
-  await ok(await call(providers+'/openai',fresh.token,'PUT',{...config,apiKey:'qa-second-key-'+runId,baseUrl:'https://api.openai.com/v1'}),200,'Switch active AI')
-  const active=(await (await call(providers,fresh.token)).json()).providers.filter(row=>row.enabled&&row.provider!=='amap')
+  await ok(await call(providers+'/openai',managedTravel.token,'PUT',{...config,apiKey:'qa-second-key-'+runId,baseUrl:'https://api.openai.com/v1'}),200,'Switch active AI')
+  const active=(await (await call(providers,managedTravel.token)).json()).providers.filter(row=>row.enabled&&row.provider!=='amap')
   assert(active.length===1&&active[0].provider==='openai','Only one personal AI configuration may be active')
-  const privateAddress=await call(providers+'/custom-ai',fresh.token,'PUT',{...config,baseUrl:'https://127.0.0.1/v1'})
+  const privateAddress=await call(providers+'/custom-ai',managedTravel.token,'PUT',{...config,baseUrl:'https://127.0.0.1/v1'})
   assert([400,409].includes(privateAddress.status),'Private AI destinations must be rejected')
   pass('AI settings take effect, preserve unchanged keys, enforce one active provider and reject unsafe destinations')
-  await ok(await call(providers+'/amap',fresh.token,'PUT',{apiKey:'qa-amap-key-'+runId,enabled:true}),200,'Save Amap key')
-  assert((await (await call('/travel-api/api/v1/maps/status',fresh.token)).json()).provider==='amap','Map search must select the personal Amap provider')
-  assert((await (await call('/travel-api/api/v1/maps/status',b.token)).json()).provider!=='amap','Another user must not use the Amap key')
+  await ok(await call(providers+'/amap',managedTravel.token,'PUT',{apiKey:'qa-amap-key-'+runId,enabled:true}),200,'Save Amap key')
+  assert((await (await call('/travel-api/api/v1/maps/status',managedTravel.token)).json()).provider==='amap','Map search must select the personal Amap provider')
+  assert((await (await call('/travel-api/api/v1/maps/status',otherTravel.token)).json()).provider!=='amap','Another user must not use the Amap key')
   pass('Personal Amap Web-service key selects server-side map search only for its owner')
   // Re-enter ledger with the newly authenticated identity after the password change.
   const ledgerRequest=client(),ledgerFlow=await begin(ledgerRequest,'login',true)
@@ -101,8 +102,8 @@ export async function accountAcceptance(context){
   assert(cloud.configured&&cloud.usernameMasked&&!JSON.stringify(cloud).includes('qa-nutstore-password'),'Ledger secret must remain masked')
   assert(!(await (await call(credentials,ledgerB.token)).json()).configured,'Ledger credentials must remain isolated')
   pass('Central account management and SmartLedger use the same encrypted cloud credential record')
-  for(const name of ['deepseek','openai','amap'])await ok(await call(providers+'/'+name,fresh.token,'DELETE'),200,'Remove QA provider')
+  for(const name of ['deepseek','openai','amap'])await ok(await call(providers+'/'+name,managedTravel.token,'DELETE'),200,'Remove QA provider')
   await ok(await call(credentials,newLedger.token,'DELETE'),200,'Remove QA ledger credential')
-  assert(!(await (await call(providers,fresh.token)).json()).providers.length,'Provider deletion must persist')
+  assert(!(await (await call(providers,managedTravel.token)).json()).providers.length,'Provider deletion must persist')
   pass('Provider and ledger credential deletion removes only the current account configuration')
 }

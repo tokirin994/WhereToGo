@@ -25,22 +25,22 @@ try{
   if($LASTEXITCODE -ne 0){throw "Java build failed: $($pair[1])"}
   Copy-Item -LiteralPath (Join-Path $destination "target\$($pair[2])-0.1.0-SNAPSHOT.jar") -Destination (Join-Path $output "app\$($pair[1]).jar")
  }
- foreach($kind in @('portal','ledger')){
+ foreach($kind in @('portal','travel','ledger')){
   foreach($name in @('VITE_OIDC_CLIENT_ID','VITE_OIDC_AUDIENCE','VITE_APP_BASE_PATH')){if(-not $before.ContainsKey($name)){$before[$name]=[Environment]::GetEnvironmentVariable($name,'Process')}}
-  $env:VITE_OIDC_CLIENT_ID=if($kind -eq 'portal'){'wheretogo-web'}else{'smartledger-web'}
-  $env:VITE_OIDC_AUDIENCE=if($kind -eq 'portal'){'wheretogo-api'}else{'smartledger-api'}
-  $env:VITE_APP_BASE_PATH=if($kind -eq 'portal'){'/'}else{'/ledger/'}
-  $directory=if($kind -eq 'portal'){Join-Path $repo 'frontend'}else{Join-Path $repo 'smartledger\frontend'}
+  $env:VITE_OIDC_CLIENT_ID=@{portal='portal-web';travel='travel-web';ledger='smartledger-web'}[$kind]
+  $env:VITE_OIDC_AUDIENCE=@{portal='portal-api';travel='wheretogo-api';ledger='smartledger-api'}[$kind]
+  $env:VITE_APP_BASE_PATH=if($kind -eq 'portal'){'/'}else{"/$kind/"}
+  $directory=Join-Path $repo "apps\$kind"
   Push-Location $directory
   try{& 'D:\Application\Nodejs\npm.cmd' run build -- --mode vps --outDir (Join-Path $output "dist\$kind") --emptyOutDir;if($LASTEXITCODE -ne 0){throw "Frontend build failed: $kind"}}finally{Pop-Location}
  }
 }finally{foreach($name in $before.Keys){[Environment]::SetEnvironmentVariable($name,$before[$name],'Process')};$env:PATH=$oldPath}
-foreach($file in @('compose.yml','Api.Dockerfile','Identity.Dockerfile','provision.py','activate.sh','backup.sh','init-databases.sh','host-firewall.sh','configure-operations.sh','configure-registration.sh','configure-registration.py','backup-export.py','configure-backup-download.sh')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $output $file)}
+foreach($file in @('compose.yml','Api.Dockerfile','Identity.Dockerfile','provision.py','activate.sh','backup.sh','init-databases.sh','host-firewall.sh','configure-operations.sh','configure-registration.sh','configure-registration.py','configure-applications.sh','configure-applications.py','backup-export.py','configure-backup-download.sh')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $output $file)}
 foreach($file in @('Postgres.Dockerfile','runtime-grants.sql')){Copy-Item -LiteralPath (Join-Path $repo "deploy\production\$file") -Destination (Join-Path $output $file)}
 Copy-Item -LiteralPath (Join-Path $repo 'identity\themes\personal') -Destination (Join-Path $output 'identity-theme') -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $repo 'identity\realm-local.json') -Destination (Join-Path $output 'realm-template.json')
 $caddy=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Caddyfile'))
-foreach($kind in @('portal','ledger')){
+foreach($kind in @('portal','travel','ledger')){
  $headers=[IO.File]::ReadAllText((Join-Path $output "dist\$kind\_headers"))
  $policy=[regex]::Match($headers,'(?m)^\s*Content-Security-Policy:\s*(.+)$').Groups[1].Value.Trim()
  if(-not $policy){throw "Missing $kind content security policy"}

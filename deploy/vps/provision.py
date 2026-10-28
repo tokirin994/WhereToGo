@@ -41,10 +41,11 @@ for account in accounts:
  if account['username']=='tok':user['realmRoles']=['portal-admin','default-roles-personal']
  config['users'].append(user)
 for client in config['clients']:
- app=origin+('/ledger/' if client['clientId']=='smartledger-web' else '/')
+ app=origin+{'portal-web':'/','travel-web':'/travel/','smartledger-web':'/ledger/'}[client['clientId']]
  client.update({'rootUrl':app,'baseUrl':app,'redirectUris':[app+'auth/callback',app+'auth/silent'],'webOrigins':[origin]})
- if client['clientId']=='wheretogo-web':client.setdefault('protocolMappers',[]).append({'name':'personal-account-audience','protocol':'openid-connect','protocolMapper':'oidc-audience-mapper','config':{'included.client.audience':'account','access.token.claim':'true','id.token.claim':'false'}})
- if client['clientId']=='wheretogo-web':client.setdefault('protocolMappers',[]).append({'name':'personal-account-roles','protocol':'openid-connect','protocolMapper':'oidc-usermodel-client-role-mapper','config':{'usermodel.clientRoleMapping.clientId':'account','claim.name':'resource_access.account.roles','jsonType.label':'String','multivalued':'true','access.token.claim':'true','id.token.claim':'false'}})
+ if origin+'/auth/silent' not in client['redirectUris']:client['redirectUris'].append(origin+'/auth/silent')
+ if client['clientId']=='portal-web':client.setdefault('protocolMappers',[]).append({'name':'personal-account-audience','protocol':'openid-connect','protocolMapper':'oidc-audience-mapper','config':{'included.client.audience':'account','access.token.claim':'true','id.token.claim':'false'}})
+ if client['clientId']=='portal-web':client.setdefault('protocolMappers',[]).append({'name':'personal-account-roles','protocol':'openid-connect','protocolMapper':'oidc-usermodel-client-role-mapper','config':{'usermodel.clientRoleMapping.clientId':'account','claim.name':'resource_access.account.roles','jsonType.label':'String','multivalued':'true','access.token.claim':'true','id.token.claim':'false'}})
  client['attributes']['post.logout.redirect.uris']=app+'auth/signed-out'
  client['attributes']['frontchannel.logout.url']=app+'auth/frontchannel'
  client.setdefault('protocolMappers',[]).append({'name':'portal-roles','protocol':'openid-connect','protocolMapper':'oidc-usermodel-realm-role-mapper','config':{'claim.name':'portal_roles','jsonType.label':'String','multivalued':'true','id.token.claim':'true','access.token.claim':'true','userinfo.token.claim':'true'}})

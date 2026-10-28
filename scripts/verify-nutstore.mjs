@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { createHash, randomBytes, createDecipheriv } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { createInitialSnapshot, createTransaction } from '../smartledger/frontend/src/ledger.ts'
+import { createInitialSnapshot, createTransaction } from '../apps/ledger/src/ledger.ts'
 
 const issuer='http://localhost:8091/realms/local'
 const api='http://localhost:8090'
@@ -100,7 +100,7 @@ try{
   const anon=await fetch(api+'/api/v1/sync/nutstore/credentials');assert.equal(anon.status,401);pass('anonymous credentials endpoint is protected')
   const tokens=await register('smartledger-web','http://localhost:5174');accessToken=tokens.access_token
   pass('public registration, ordinary-user permissions and PKCE login')
-  const travelSession=await sso(tokens.testSession,'wheretogo-web','http://localhost:5173')
+  const travelSession=await sso(tokens.testSession,'portal-web','http://localhost:5173')
   const travelIdentity=JSON.parse(Buffer.from(travelSession.access_token.split('.')[1],'base64url').toString())
   assert.equal(travelIdentity.sub,users[0]);pass('same account uses travel and ledger through SSO without another password')
   const status=await responseJson(await business('/api/v1/sync/nutstore/credentials','PUT',supplied),200,'Save credentials')
@@ -123,7 +123,7 @@ try{
   cloudUploaded=true
   await responseJson(await business('/api/v1/sync/nutstore/upload','POST',{snapshot}),200,'Nutstore upload');pass('real snapshot backup to an isolated cloud file')
   const restored=await responseJson(await business('/api/v1/sync/nutstore/download','POST'),200,'Nutstore download');assert.deepEqual(restored,snapshot);pass('restore preserves transaction amount, date, book and category')
-  const second=await register('wheretogo-web','http://localhost:5173')
+  const second=await register('portal-web','http://localhost:5173')
   const secondClaims=JSON.parse(Buffer.from(second.access_token.split('.')[1],'base64url').toString())
   assert.ok(secondClaims.aud.includes('wheretogo-api'))
   const travel=await fetch('http://localhost:8080/api/v1/system/info',{headers:{Authorization:'Bearer '+second.access_token}});assert.equal(travel.status,200);pass('registered account can access its travel service')

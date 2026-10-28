@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { accountAcceptance } from './account-acceptance.mjs'
-const require=createRequire(new URL('../frontend/package.json',import.meta.url))
+const require=createRequire(new URL('../apps/portal/package.json',import.meta.url))
 const {JSDOM}=require('jsdom')
 const origin=new URL(process.env.WTG_PUBLIC_ORIGIN||'https://personal-45-205-23-125.sslip.io').origin
 if(!process.argv.includes('--create-test-accounts'))throw Error('Pass --create-test-accounts to authorize isolated test accounts')
@@ -42,7 +42,8 @@ async function follow(request,response,stop){
 }
 async function begin(request,kind='login',ledger=false,extra={}){
   const verifier=randomBytes(32).toString('base64url'),state=randomBytes(16).toString('hex')
-  const clientId=ledger?'smartledger-web':'wheretogo-web',redirect=origin+(ledger?'/ledger/':'/')+'auth/callback'
+  const app=ledger==='travel'?'travel':ledger?'ledger':'portal'
+  const clientId={portal:'portal-web',travel:'travel-web',ledger:'smartledger-web'}[app],redirect=origin+{portal:'/',travel:'/travel/',ledger:'/ledger/'}[app]+'auth/callback'
   const params=new URLSearchParams({client_id:clientId,redirect_uri:redirect,response_type:'code',scope:'openid profile email',ui_locales:'zh-CN',state,code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'})
   if(kind==='register')params.set('prompt','create')
   for(const [key,value] of Object.entries(extra))params.set(key,value)
@@ -83,8 +84,8 @@ async function register(user,ledger=false){
   report.users.find(item=>item.username===user.username).subject=result.claims.sub;save()
   return {...result,request:flow.request}
 }
-async function login(user,useEmail=false){
-  const flow=await begin(client())
+async function login(user,useEmail=false,app=false){
+  const flow=await begin(client(),'login',app)
   const doc=page(await flow.response.text()),form=doc.querySelector('#kc-form-login')
   assert(form,'Login form is missing')
   return exchange(flow,await flow.request(form.action,{method:'POST',body:new URLSearchParams({username:useEmail?user.email:user.username,password:user.password,credentialId:''})}))
@@ -137,7 +138,9 @@ try{
   assert((await login(first,true)).claims.sub===a.claims.sub,'Email login failed')
   pass('New account can sign in again with username or email')
 
-  for(const [prefix,token] of [['/travel-api',a.token],['/ledger-api',ledgerA.token]]){
+  const travelAFlow=await begin(a.request,'login','travel'),travelA=await exchange(travelAFlow,travelAFlow.response)
+  const travelBFlow=await begin(ledgerB.request,'login','travel'),travelB=await exchange(travelBFlow,travelBFlow.response)
+  for(const [prefix,token] of [['/travel-api',travelA.token],['/ledger-api',ledgerA.token]]){
     const info=await (await status(await api(prefix,'/api/v1/system/info',token),200,'New account API admission')).json()
     assert(!info.localDevelopment&&info.accessPolicy==='authenticated-users','Public registration admission policy must be active')
     await status(await api(prefix,prefix==='/travel-api'?'/api/v1/trips':'/api/v1/books'),401,'Anonymous API request')
@@ -147,13 +150,13 @@ try{
   await status(await api('/ledger-api','/api/v1/books',a.token),401,'Wrong ledger audience')
   pass('Tokens remain restricted to their application audience')
 
-  const trip=await (await status(await api('/travel-api','/api/v1/trips',a.token,{method:'POST',body:JSON.stringify({name:'Registration QA',destination:'Hong Kong',startsOn:'2026-11-01',endsOn:'2026-11-02'})}),201,'Create trip')).json()
-  await status(await api('/travel-api','/api/v1/trips/'+trip.id,a.token),200,'Read own trip')
-  await status(await api('/travel-api','/api/v1/trips/'+trip.id,b.token),404,'Read another account trip')
-  await status(await api('/travel-api','/api/v1/trips/'+trip.id,b.token,{method:'DELETE'}),404,'Delete another account trip')
-  const tripList=await (await api('/travel-api','/api/v1/trips',b.token)).json()
+  const trip=await (await status(await api('/travel-api','/api/v1/trips',travelA.token,{method:'POST',body:JSON.stringify({name:'Registration QA',destination:'Hong Kong',startsOn:'2026-11-01',endsOn:'2026-11-02'})}),201,'Create trip')).json()
+  await status(await api('/travel-api','/api/v1/trips/'+trip.id,travelA.token),200,'Read own trip')
+  await status(await api('/travel-api','/api/v1/trips/'+trip.id,travelB.token),404,'Read another account trip')
+  await status(await api('/travel-api','/api/v1/trips/'+trip.id,travelB.token,{method:'DELETE'}),404,'Delete another account trip')
+  const tripList=await (await api('/travel-api','/api/v1/trips',travelB.token)).json()
   assert(!tripList.some(item=>item.id===trip.id),'Trip list must not leak another account data')
-  await status(await api('/travel-api','/api/v1/trips/'+trip.id,a.token,{method:'DELETE'}),204,'Delete own trip')
+  await status(await api('/travel-api','/api/v1/trips/'+trip.id,travelA.token,{method:'DELETE'}),204,'Delete own trip')
   pass('New travel account can create/read/delete; another account cannot read or delete its trip')
   const book=await (await status(await api('/ledger-api','/api/v1/books',ledgerA.token,{method:'POST',body:JSON.stringify({name:'Registration QA book'})}),201,'Create book')).json()
   await status(await api('/ledger-api','/api/v1/books/'+book.id,ledgerA.token),200,'Read own book')

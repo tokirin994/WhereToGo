@@ -1,0 +1,18 @@
+{
+  "name": "personal-space",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev:portal": "npm run dev --workspace @personal/portal",
+    "dev:travel": "npm run dev --workspace @personal/travel",
+    "dev:ledger": "npm run dev --workspace @personal/ledger",
+    "build": "node scripts/workspace.mjs build",
+    "build:portal": "npm run build --workspace @personal/portal",
+    "build:travel": "npm run build --workspace @personal/travel",
+    "build:ledger": "npm run build --workspace @personal/ledger",
+    "test": "node scripts/workspace.mjs test",
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "export:app": "node scripts/export-app.mjs"
+  }
+}

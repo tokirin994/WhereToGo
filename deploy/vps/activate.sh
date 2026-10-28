@@ -20,6 +20,7 @@ docker build --memory=512m --memory-swap=512m -t wheretogo-vps-travel:java8 --bu
 docker build --memory=512m --memory-swap=512m -t wheretogo-vps-ledger:java8 --build-arg ARTIFACT=app/ledger.jar -f Api.Dockerfile .
 docker compose up -d db identity
 # Import only creates a missing realm; update existing realms without resetting users.
+bash configure-applications.sh
 bash configure-registration.sh
 docker compose up -d travel-api ledger-api
 ready=0

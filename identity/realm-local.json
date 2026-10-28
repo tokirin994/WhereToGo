@@ -40,8 +40,8 @@
   },
   "clients": [
     {
-      "clientId": "wheretogo-web",
-      "name": "个人门户与旅行",
+      "clientId": "portal-web",
+      "name": "个人门户 · 统一账号",
       "enabled": true,
       "publicClient": true,
       "protocol": "openid-connect",
@@ -63,6 +63,78 @@
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "http://localhost:5173/auth/signed-out",
         "frontchannel.logout.url": "http://localhost:5173/auth/frontchannel",
+        "frontchannel.logout.session.required": "true"
+      },
+      "defaultClientScopes": [
+        "basic",
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "portal-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "portal-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "personal-account-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "account",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "personal-account-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "config": {
+            "usermodel.clientRoleMapping.clientId": "account",
+            "claim.name": "resource_access.account.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "travel-web",
+      "name": "WhereToGo 旅行",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "rootUrl": "http://localhost:5175",
+      "baseUrl": "/",
+      "redirectUris": [
+        "http://localhost:5175/auth/callback",
+        "http://localhost:5175/auth/silent",
+        "http://localhost:5173/auth/silent"
+      ],
+      "webOrigins": [
+        "http://localhost:5175",
+        "http://localhost:5173"
+      ],
+      "frontchannelLogout": true,
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5175/auth/signed-out",
+        "frontchannel.logout.url": "http://localhost:5175/auth/frontchannel",
         "frontchannel.logout.session.required": "true"
       },
       "defaultClientScopes": [
@@ -100,10 +172,12 @@
       "baseUrl": "/",
       "redirectUris": [
         "http://localhost:5174/auth/callback",
-        "http://localhost:5174/auth/silent"
+        "http://localhost:5174/auth/silent",
+        "http://localhost:5173/auth/silent"
       ],
       "webOrigins": [
-        "http://localhost:5174"
+        "http://localhost:5174",
+        "http://localhost:5173"
       ],
       "frontchannelLogout": true,
       "attributes": {
