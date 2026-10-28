@@ -17,6 +17,8 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - name: Check tracked files for secrets and personal deployment values
+        run: python3 scripts/check-git-privacy.py --ref HEAD
       - run: npm run check:boundaries
       - run: npm test
       - run: npm run build

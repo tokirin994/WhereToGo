@@ -12,6 +12,16 @@
 *.tar.age*
 **/rclone.conf
 **/credential-keyring.json
+*.p12
+*.pfx
+*.jks
+*.age
+*.sql.gz
+*.sql.age
+*.sqlite
+*.sqlite3
+*.db
+security-audit/
 
 # Dependencies
 node_modules/

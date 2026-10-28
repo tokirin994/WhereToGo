@@ -7,7 +7,8 @@ import { resolve } from 'node:path'
 import { accountAcceptance } from './account-acceptance.mjs'
 const require=createRequire(new URL('../apps/portal/package.json',import.meta.url))
 const {JSDOM}=require('jsdom')
-const origin=new URL(process.env.WTG_PUBLIC_ORIGIN||'https://personal-45-205-23-125.sslip.io').origin
+if(!process.env.WTG_PUBLIC_ORIGIN)throw Error('Set WTG_PUBLIC_ORIGIN to the deployed HTTPS origin')
+const origin=new URL(process.env.WTG_PUBLIC_ORIGIN).origin
 if(!process.argv.includes('--create-test-accounts'))throw Error('Pass --create-test-accounts to authorize isolated test accounts')
 if(!origin.startsWith('https://'))throw Error('An HTTPS public origin is required')
 const issuer=origin+'/identity/realms/personal'

@@ -5,7 +5,10 @@ import {resolve,dirname} from 'node:path'
 const args=process.argv.slice(2),option=(name,fallback)=>{const at=args.indexOf('--'+name);return at<0?fallback:args[at+1]}
 const root=resolve(import.meta.dirname,'..')
 const npm=process.env.npm_execpath||resolve(dirname(createRequire(import.meta.url).resolve('npm/package.json',{paths:[dirname(process.execPath)]})),'bin/npm-cli.js')
-const selected=option('app','all'),standalone=args.includes('--standalone'),origin=new URL(option('origin','https://personal-45-205-23-125.sslip.io')).origin
+const selected=option('app','all'),standalone=args.includes('--standalone')
+const configuredOrigin=option('origin',process.env.WTG_PUBLIC_ORIGIN)
+if(!configuredOrigin)throw new Error('Provide --origin https://your-domain.example or WTG_PUBLIC_ORIGIN; deployment addresses are not stored in source')
+const origin=new URL(configuredOrigin).origin
 if(!origin.startsWith('https://'))throw new Error('Production origin must use HTTPS')
 if(!['all','portal','travel','ledger'].includes(selected))throw new Error('Unknown application')
 if(standalone&&selected==='all')throw new Error('Choose --app when building standalone')

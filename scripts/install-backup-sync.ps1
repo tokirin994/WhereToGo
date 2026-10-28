@@ -1,4 +1,7 @@
 param(
+ [Parameter(Mandatory=$true)][string]$ServerHost,
+ [Parameter(Mandatory=$true)][string]$KnownHostsFile,
+ [ValidateRange(1,65535)][int]$ServerPort=22,
  [ValidatePattern('^(?:[01][0-9]|2[0-3]):[0-5][0-9]$')][string]$DailyAt='00:00',
  [string]$Destination='D:\Application\WhereToGo\backups',
  [string]$InstallDirectory='D:\Application\WhereToGo\backup-sync',
@@ -28,9 +31,10 @@ if(-not (Test-Path -LiteralPath $privateKey)){
  $keys=$null;$keyJson=$null
 }
 $knownHosts=Join-Path $InstallDirectory 'known_hosts'
-if(-not (Test-Path -LiteralPath $knownHosts)){Copy-Item -LiteralPath 'D:\Application\WhereToGo\remote-deploy\22576\known_hosts' -Destination $knownHosts}
+if(-not (Test-Path -LiteralPath $KnownHostsFile -PathType Leaf)){throw 'Specify the verified server known_hosts file; automatic host key acceptance is not allowed'}
+Copy-Item -LiteralPath $KnownHostsFile -Destination $knownHosts -Force
 $configuration=Join-Path $InstallDirectory 'config.json'
-$config=@{host='45.205.23.125';port=22;knownHosts=$knownHosts;privateKey=$privateKey;destination=[IO.Path]::GetFullPath($Destination);statusFile=(Join-Path $InstallDirectory 'status.json');python=$Python;pythonPackages=$packages;dailyAt=$DailyAt;timeZone=[TimeZoneInfo]::Local.Id;maxAgeHours=30}
+$config=@{host=$ServerHost;port=$ServerPort;knownHosts=$knownHosts;privateKey=$privateKey;destination=[IO.Path]::GetFullPath($Destination);statusFile=(Join-Path $InstallDirectory 'status.json');python=$Python;pythonPackages=$packages;dailyAt=$DailyAt;timeZone=[TimeZoneInfo]::Local.Id;maxAgeHours=30}
 [IO.File]::WriteAllText($configuration,($config | ConvertTo-Json),[Text.UTF8Encoding]::new($false))
 $action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "'+(Join-Path $InstallDirectory 'run-backup-sync.ps1')+'" -Configuration "'+$configuration+'"')
 $triggers=@((New-ScheduledTaskTrigger -Daily -At $DailyAt),(New-ScheduledTaskTrigger -AtLogOn -User ([Security.Principal.WindowsIdentity]::GetCurrent().Name)))

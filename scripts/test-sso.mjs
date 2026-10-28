@@ -1,7 +1,8 @@
 /** Live protocol test, not browser UI automation. Uses an isolated cookie jar. */
 import {randomBytes,createHash} from 'node:crypto'
 import {writeFileSync} from 'node:fs'
-const origin=new URL(process.env.WTG_PUBLIC_ORIGIN||'https://personal-45-205-23-125.sslip.io').origin
+if(!process.env.WTG_PUBLIC_ORIGIN)throw new Error('Set WTG_PUBLIC_ORIGIN to the deployed HTTPS origin')
+const origin=new URL(process.env.WTG_PUBLIC_ORIGIN).origin
 const issuer=origin+'/identity/realms/personal',cookies=new Map(),checks=[]
 function ensure(condition,message){if(!condition)throw new Error(message)}
 function pass(message){checks.push(message);console.log('PASS '+message)}

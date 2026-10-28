@@ -13,17 +13,18 @@
     "prebuild": "node scripts/prepare-pdf-assets.mjs"
   },
   "dependencies": {
+    "@personal/identity": "file:../../packages/identity",
+    "@personal/platform": "file:../../packages/platform",
     "oidc-client-ts": "^3.5.0",
     "pdfjs-dist": "^6.4.299",
     "read-excel-file": "^9.3.12",
     "tesseract.js": "^7.0.0",
-    "vue": "^3.5.42",
-    "@personal/identity": "file:../../packages/identity",
-    "@personal/platform": "file:../../packages/platform"
+    "vue": "^3.5.42"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
     "@vitejs/plugin-vue": "^6.0.0",
+    "@vue/test-utils": "^2.5.1",
     "fake-indexeddb": "^6.2.6",
     "jsdom": "^30.1.2",
     "typescript": "~5.8.0",
