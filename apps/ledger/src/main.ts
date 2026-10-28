@@ -1,4 +1,6 @@
-import { createApp } from 'vue'
+import { createApp,h } from 'vue'
+import ApplicationBoundary from '@personal/platform/ApplicationBoundary.vue'
+import {portalUrl} from './appLinks'
 import App from './App.vue'
 import './style.css'
 import './ledger.css'
@@ -8,4 +10,4 @@ import './ledger-ui.css'
 import './experience.css'
 import './ocr-ui.css'
 
-createApp(App).mount('#app')
+createApp({render:()=>h(ApplicationBoundary,{appName:'日常记账',portalUrl},()=>h(App))}).mount('#app')

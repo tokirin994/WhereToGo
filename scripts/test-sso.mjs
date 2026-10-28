@@ -54,6 +54,11 @@ async function refresh(client,token){
   ensure(response.status===200,'Token rotation must succeed independently for '+client.id)
   return response.json()
 }
+async function accountJson(path,token){
+  const response=await request(origin+path,{headers:{Authorization:'Bearer '+token,Accept:'application/json'}})
+  ensure(response.status===200&&response.headers.get('content-type')?.includes('application/json'),'Account endpoint must return JSON, not an HTML page: '+path)
+  return response.json()
+}
 await authorize(clients[1],{silent:true,anonymous:true});pass('匿名进入子应用：静默认证返回未登录，不显示登录表单')
 const portal=await authorize(clients[0]);ensure(portal.usedPassword,'Initial portal login must authenticate');pass('门户首次登录：真实账号、授权码及 PKCE 验证通过')
 const ledger=await authorize(clients[1],{silent:true}),travel=await authorize(clients[2],{silent:true})
@@ -63,11 +68,15 @@ for(const client of [clients[1],clients[2]]){
   const managed=await authorize(client,{silent:true,callbackPrefix:'/'})
   ensure(managed.claims.sub===portal.claims.sub&&managed.claims.sid===portal.claims.sid,'Managed service grants must retain the portal identity')
   const path=client.id==='travel-web'?'/travel-api/api/v1/account/providers':'/ledger-api/api/v1/sync/nutstore/credentials'
-  ensure((await request(origin+path,{headers:{Authorization:'Bearer '+managed.token.access_token}})).status===200,'Managed service account settings must accept their own app token')
+  const settings=await accountJson(path,managed.token.access_token)
+  ensure(client.id==='travel-web'?Array.isArray(settings.providers)&&typeof settings.available==='boolean':typeof settings.configured==='boolean'&&typeof settings.available==='boolean','Managed account settings must match the rendered frontend data model')
 }
 pass('门户账号中心：旅游和记账分别授权到门户静默回调，使用各自令牌读取设置')
-ensure((await request(origin+'/identity/realms/personal/account/',{headers:{Authorization:'Bearer '+portal.token.access_token}})).status===200,'Central profile must remain available')
-pass('统一账号资料：门户自身的 account audience 可读取资料')
+const profile=await accountJson('/identity/realms/personal/account/',portal.token.access_token)
+ensure(profile.id===portal.claims.sub&&typeof profile.username==='string','Central profile must match the active account')
+const devices=await accountJson('/identity/realms/personal/account/sessions',portal.token.access_token)
+ensure(Array.isArray(devices)&&devices.some(row=>row.current===true)&&devices.every(row=>typeof row.id==='string'&&Array.isArray(row.clients)),'Device list must match the account frontend data model')
+pass('统一账号资料与设备：返回真实 JSON，字段结构匹配前端，同一账号资料可读取')
 for(let i=0;i<3;i++)for(const client of clients){
   const result=await authorize(client,{silent:true})
   ensure(result.claims.sub===portal.claims.sub&&result.claims.sid===portal.claims.sid&&!result.usedPassword,'Repeated application switches must retain the SSO session')

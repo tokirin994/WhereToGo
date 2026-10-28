@@ -1,5 +1,7 @@
-import {createApp} from 'vue'
+import {createApp,h} from 'vue'
+import ApplicationBoundary from '@personal/platform/ApplicationBoundary.vue'
+import {portalUrl} from './appLinks'
 import {createPinia} from 'pinia'
 import App from './TravelRoot.vue'
 import './style.css'
-createApp(App).use(createPinia()).mount('#app')
+createApp({render:()=>h(ApplicationBoundary,{appName:'旅行规划',portalUrl},()=>h(App))}).use(createPinia()).mount('#app')

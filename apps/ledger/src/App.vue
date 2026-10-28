@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import {asyncPage} from '@personal/platform/async-page'
 import type { User } from 'oidc-client-ts'
 import { createIdentitySession } from './identitySession'
-const LedgerWorkspace=defineAsyncComponent(()=>import('./LedgerWorkspace.vue'))
+const LedgerWorkspace=asyncPage(()=>import('./LedgerWorkspace.vue'),'日常记账')
 import { clearNutstoreCredentials } from './nutstoreSync'
 import { authorizedRequest, apiError, setSessionTokenProvider } from './apiClient'
 import { portalUrl, appBasePath, appRoutePath, ledgerOnly,platform } from './appLinks'
