@@ -45,7 +45,7 @@ await context.route(origin+'/**',async route=>{
   const policy=readFileSync(resolve(bundle,app,'_headers'),'utf8').match(/Content-Security-Policy: ([^\r\n]+)/)?.[1]
   return route.fulfill({status:200,body,contentType:type,headers:{'cache-control':'no-store',...(policy?{'content-security-policy':policy}:{})}})
 })
-context.on('page',page=>page.on('pageerror',error=>runtimeErrors.push(error.name)))
+context.on('page',page=>page.on('pageerror',error=>runtimeErrors.push({stage,name:error.name,message:error.message,stack:error.stack})))
 const page=await context.newPage()
 try{
   stage='portal login';await page.goto(origin+'/',{waitUntil:'domcontentloaded'})

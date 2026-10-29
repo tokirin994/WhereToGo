@@ -3,7 +3,7 @@ import {browserCompatibility,fallbackColors} from '@personal/platform/build'
 import {timedFetch} from '@personal/platform/http'
 import {browserSessionStorage} from '@personal/identity/storage'
 import {createPlatform} from '@personal/platform'
-afterEach(()=>{vi.unstubAllGlobals();vi.useRealTimers()})
+afterEach(()=>{vi.unstubAllGlobals();vi.useRealTimers();window.dispatchEvent(new Event('pageshow'))})
 describe('Safari browser compatibility',()=>{
   it('targets Safari 15.4 for both script syntax and CSS',()=>{
     expect(browserCompatibility.build.target).toContain('safari15.4')
@@ -40,5 +40,15 @@ describe('Safari browser compatibility',()=>{
     await timedFetch('/test');expect(vi.getTimerCount()).toBe(0)
     const controller=new AbortController();await timedFetch('/test',{signal:controller.signal})
     expect(fetch).toHaveBeenLastCalledWith('/test',{signal:controller.signal});expect(vi.getTimerCount()).toBe(0)
+  })
+  it('cancels pending requests on navigation and does not start late requests until restored',async()=>{
+    const request=vi.fn((_input:unknown,options:RequestInit)=>new Promise<Response>((_resolve,reject)=>options.signal?.addEventListener('abort',()=>reject(new DOMException('cancelled','AbortError')))))
+    vi.stubGlobal('fetch',request)
+    const pending=expect(timedFetch('/test')).rejects.toMatchObject({name:'AbortError'})
+    window.dispatchEvent(new Event('pagehide'));await pending
+    await expect(timedFetch('/late')).rejects.toMatchObject({name:'AbortError'})
+    expect(request).toHaveBeenCalledTimes(1)
+    window.dispatchEvent(new Event('pageshow'));request.mockResolvedValueOnce(new Response('{}'))
+    await timedFetch('/restored');expect(request).toHaveBeenCalledTimes(2)
   })
 })
