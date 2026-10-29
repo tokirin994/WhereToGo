@@ -1,20 +1,25 @@
 /** Real WebKit-engine UI regression, not an Apple Safari device test.
- * Uses an isolated test account/cookie jar. No Key, profile or ledger mutations.
+ * Uses an isolated test account/cookie jar. Default mode performs no mutations.
+ * --cloud-sync-write explicitly opts into a marked empty-account sync fixture.
  * Optional --bundle-dir serves candidate static files at the configured HTTPS
  * origin while identity and read-only APIs still use that origin's real server.
  */
 import {readFileSync,existsSync,mkdirSync,writeFileSync} from 'node:fs'
 import {resolve,extname,sep} from 'node:path'
 import {pathToFileURL} from 'node:url'
+import {randomUUID} from 'node:crypto'
 const {WTG_PUBLIC_ORIGIN,WTG_USERNAME,WTG_PASSWORD,WTG_PLAYWRIGHT_MODULE,WTG_BROWSER_REPORT_DIR}=process.env
 if(!WTG_PUBLIC_ORIGIN||!WTG_USERNAME||!WTG_PASSWORD||!WTG_PLAYWRIGHT_MODULE)throw Error('Set public origin, isolated test credentials and Playwright module path through environment variables')
 const origin=new URL(WTG_PUBLIC_ORIGIN).origin,args=process.argv.slice(2),bundleAt=args.indexOf('--bundle-dir')
 const bundle=bundleAt>=0?resolve(args[bundleAt+1]):null,legacy=args.includes('--legacy'),mobile=args.includes('--mobile'),testRejection=args.includes('--rejected-api')
+const syncWrite=args.includes('--cloud-sync-write')
+if(syncWrite&&(!WTG_BROWSER_REPORT_DIR||process.env.WTG_ALLOW_SYNC_WRITE!=='true'||!process.env.WTG_SYNC_TEST_SUBJECT))throw Error('Sync writes require an explicit opt-in, a private report directory and the isolated test subject')
 const {webkit}=await import(pathToFileURL(resolve(WTG_PLAYWRIGHT_MODULE)).href)
 const browser=await webkit.launch({headless:true})
 const context=await browser.newContext({viewport:mobile?{width:390,height:844}:{width:1440,height:1000},isMobile:mobile,hasTouch:mobile,deviceScaleFactor:mobile?3:1,locale:'zh-CN',timezoneId:'Asia/Hong_Kong',colorScheme:'light'})
 let blockFrames=false,rejectLedgerRead=false,stage='setup',passwordForms=0
 const checks=[],runtimeErrors=[]
+let syncFixture
 const pass=name=>{checks.push(name);console.log('PASS WebKit '+name)}
 const ensure=(condition,message)=>{if(!condition)throw Error(message)}
 async function ledgerReady(page,timeout=35000){
@@ -96,7 +101,46 @@ try{
     }
   }
   pass('light and dark account appearance')
+  if(syncWrite){
+    stage='prepare empty-account sync fixture'
+    const bookId=randomUUID(),subject=process.env.WTG_SYNC_TEST_SUBJECT
+    await page.evaluate(async({subject,bookId})=>{
+      const authority=location.origin+'/identity/realms/personal',user=JSON.parse(sessionStorage.getItem('oidc.user:'+authority+':smartledger-web')||'null')
+      if(!user||user.profile.sub!==subject)throw Error('The configured isolated test subject does not match')
+      const headers={Authorization:'Bearer '+user.access_token,Accept:'application/json'}
+      const remote=await fetch('/ledger-api/api/v1/sync/snapshot',{headers,cache:'no-store'})
+      const books=await fetch('/ledger-api/api/v1/books',{headers,cache:'no-store'})
+      if(!remote.ok||!books.ok)throw Error('Cannot verify that the test account is empty')
+      const state=await remote.json(),list=await books.json()
+      if(state.revision!==0||state.snapshot!==null||!Array.isArray(list)||list.length)throw Error('Refusing to overwrite a nonempty test account')
+      const snapshot={schemaVersion:4,updatedAt:new Date().toISOString(),categories:[],transactions:[],budgets:[],pinnedRanges:[],books:[{id:bookId,name:'Cloud sync regression',type:'general',icon:'book',color:'#5b8def',note:'Disposable automated test fixture',startDate:null,endDate:null,isPinned:true,participants:[]}],settings:{cloudSyncEnabled:true,cloudSyncSchedule:'on_app_open',midnightSyncEnabled:false}}
+      const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('smartledger-local',1);request.onupgradeneeded=()=>request.result.createObjectStore('snapshots');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(Error('Test IndexedDB unavailable'))})
+      const key='snapshot:'+authority+':'+subject
+      const existing=await new Promise((resolve,reject)=>{const request=db.transaction('snapshots','readonly').objectStore('snapshots').get(key);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(Error('Cannot inspect local test state'))})
+      if(existing){db.close();throw Error('Refusing to overwrite existing local test state')}
+      await new Promise((resolve,reject)=>{const transaction=db.transaction('snapshots','readwrite');transaction.objectStore('snapshots').put(snapshot,key);transaction.oncomplete=()=>resolve();transaction.onerror=()=>reject(Error('Cannot seed local sync fixture'))})
+      db.close()
+    },{subject,bookId})
+    syncFixture={subject,bookId,expectedEmpty:true,uploaded:false}
+    writeFileSync(resolve(WTG_BROWSER_REPORT_DIR,'sync-fixture.json'),JSON.stringify(syncFixture,null,2))
+  }
   stage='ledger launch';await page.locator('.account-app-ledger .account-app-launch').click()
+  if(syncWrite){
+    await ledgerReady(page)
+    ensure(await page.locator('.ledger-connection-notice').count()===0,'Automatic snapshot upload reported a rejected credential')
+    const saved=await page.evaluate(async({subject,bookId})=>{
+      const authority=location.origin+'/identity/realms/personal',user=JSON.parse(sessionStorage.getItem('oidc.user:'+authority+':smartledger-web')||'null')
+      if(!user||user.profile.sub!==subject)throw Error('Test identity changed')
+      const response=await fetch('/ledger-api/api/v1/sync/snapshot',{headers:{Authorization:'Bearer '+user.access_token,Accept:'application/json'},cache:'no-store'})
+      if(!response.ok)throw Error('Cannot read back the uploaded test snapshot')
+      const result=await response.json()
+      if(result.revision!==1||result.snapshot?.books?.length!==1||result.snapshot.books[0].id!==bookId||result.snapshot.transactions.length!==0)throw Error('Automatic upload did not persist the marked empty fixture exactly once')
+      return {revision:result.revision,contentHash:result.contentHash}
+    },syncFixture)
+    syncFixture={...syncFixture,...saved,uploaded:true}
+    writeFileSync(resolve(WTG_BROWSER_REPORT_DIR,'sync-fixture.json'),JSON.stringify(syncFixture,null,2))
+    pass('automatic snapshot PUT and server read-back succeed on the isolated empty test account')
+  }else{
   await ledgerReady(page);await page.reload()
   await ledgerReady(page)
   pass('ledger opens and reloads without another login')
@@ -128,6 +172,7 @@ try{
   await page.goBack()
   await ledgerReady(page)
   pass('back navigation restores ledger session')
+  }
   stage='unified logout';blockFrames=false
   await page.goto(origin+'/',{waitUntil:'domcontentloaded'})
   await page.locator('.portal-account-menu summary').click()
@@ -135,7 +180,7 @@ try{
   await page.locator('.portal-login').waitFor({timeout:30000})
   pass('portal logout clears the test session')
   ensure(passwordForms===1&&runtimeErrors.length===0,'Unexpected login or JavaScript failure')
-  if(WTG_BROWSER_REPORT_DIR)writeFileSync(resolve(WTG_BROWSER_REPORT_DIR,`result-${mobile?'mobile':'desktop'}-${legacy?'fallback':'modern'}.json`),JSON.stringify({engine:'WebKit',appleDevice:false,candidateBundle:!!bundle,legacy,mobile,checks,passwordForms,runtimeErrors},null,2))
+  if(WTG_BROWSER_REPORT_DIR)writeFileSync(resolve(WTG_BROWSER_REPORT_DIR,`result-${mobile?'mobile':'desktop'}-${legacy?'fallback':'modern'}.json`),JSON.stringify({engine:'WebKit',appleDevice:false,candidateBundle:!!bundle,legacy,mobile,checks,passwordForms,runtimeErrors,syncFixture},null,2))
 }catch(error){
   console.error('FAIL WebKit stage: '+stage)
   if(WTG_BROWSER_REPORT_DIR){mkdirSync(WTG_BROWSER_REPORT_DIR,{recursive:true});writeFileSync(resolve(WTG_BROWSER_REPORT_DIR,'failure.json'),JSON.stringify({stage,message:error.message,runtimeErrors},null,2))}

@@ -96,7 +96,6 @@ onMounted(async () => {
       if (!apiUrl) throw new Error('SmartLedger API 地址尚未配置。')
       const response = await authorizedRequest(apiUrl,user.value.access_token,`/api/v1/integrations/wheretogo/trips/${encodeURIComponent(tripId)}/open`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${user.value.access_token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tripName: travelHandoff.get('travelTripName') || '旅行账本',
           destination: travelHandoff.get('travelDestination'),

@@ -1,10 +1,20 @@
 import {afterEach,describe,expect,it,vi} from 'vitest'
 import {browserCompatibility,fallbackColors} from '@personal/platform/build'
-import {timedFetch} from '@personal/platform/http'
+import {timedFetch,authenticatedJsonHeaders} from '@personal/platform/http'
 import {browserSessionStorage} from '@personal/identity/storage'
 import {createPlatform} from '@personal/platform'
 afterEach(()=>{vi.unstubAllGlobals();vi.useRealTimers();window.dispatchEvent(new Event('pageshow'))})
 describe('Safari browser compatibility',()=>{
+  it('canonicalizes duplicated case variants without mutating the caller headers',()=>{
+    const caller=new Headers([['Authorization','Bearer old-a'],['authorization','Bearer old-b'],['Content-Type','text/plain'],['X-Request-ID','test-id']])
+    const headers=authenticatedJsonHeaders('current-token',{headers:caller,body:'{}'},true)
+    expect(headers.get('authorization')).toBe('Bearer current-token')
+    expect(headers.get('content-type')).toBe('application/json')
+    expect(headers.get('accept')).toBe('application/json')
+    expect(headers.get('x-request-id')).toBe('test-id')
+    expect(caller.get('authorization')).toBe('Bearer old-a, Bearer old-b')
+    expect(caller.get('content-type')).toBe('text/plain')
+  })
   it('targets Safari 15.4 for both script syntax and CSS',()=>{
     expect(browserCompatibility.build.target).toContain('safari15.4')
     expect(browserCompatibility.build.cssTarget).toBe('safari15.4')

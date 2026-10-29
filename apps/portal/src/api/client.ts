@@ -1,4 +1,4 @@
-import {timedFetch} from '@personal/platform/http'
+import {timedFetch,authenticatedJsonHeaders} from '@personal/platform/http'
 import {applicationAccessToken} from '../applicationAccess'
 import {platform} from '../appLinks'
 import {responseJson} from '../responseJson'
@@ -6,7 +6,7 @@ import {responseJson} from '../responseJson'
 export async function apiRequest<T>(path:string,options:RequestInit={}):Promise<T>{
   const base=platform.application('travel').apiUrl.replace(/\/$/,'').replace(/\/api$/,'')
   const send=async(force=false)=>timedFetch(base+path,{...options,credentials:'omit',redirect:'error',cache:'no-store',
-    headers:{...Object.fromEntries(new Headers(options.headers)),Authorization:'Bearer '+await applicationAccessToken('travel',force),Accept:'application/json',...(options.body?{'Content-Type':'application/json'}:{})}})
+    headers:authenticatedJsonHeaders(await applicationAccessToken('travel',force),options,true)})
   let response=await send()
   if(response.status===401&&(!options.method||options.method.toUpperCase()==='GET'))response=await send(true)
   if(!response.ok){

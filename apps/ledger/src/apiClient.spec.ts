@@ -2,11 +2,19 @@ import {afterEach,describe,expect,it,vi} from 'vitest'
 import {authorizedRequest,setSessionTokenProvider} from './apiClient'
 afterEach(()=>{setSessionTokenProvider();vi.unstubAllGlobals()})
 describe('ledger session token lifecycle',()=>{
+  it.each(['Authorization','authorization','AUTHORIZATION'])('replaces caller %s with exactly one current Bearer header on JSON writes',async name=>{
+    const fetcher=vi.fn().mockResolvedValue(new Response('{}'));vi.stubGlobal('fetch',fetcher)
+    setSessionTokenProvider(vi.fn().mockResolvedValue('current-token'))
+    await authorizedRequest('/api','old-token','/api/v1/sync/snapshot',{method:'PUT',headers:{[name]:'Bearer old-token','content-type':'application/json'},body:'{}'})
+    const wire=new Headers(fetcher.mock.calls[0]![1].headers)
+    expect(wire.get('authorization')).toBe('Bearer current-token')
+    expect(wire.get('content-type')).toBe('application/json')
+  })
   it('obtains the current token before every API call rather than using a stale component prop',async()=>{
     const fetcher=vi.fn().mockResolvedValue(new Response('{}'));vi.stubGlobal('fetch',fetcher)
     const provider=vi.fn().mockResolvedValue('renewed-ledger-token');setSessionTokenProvider(provider)
     await authorizedRequest('/ledger-api','old-token','/api/v1/books')
-    expect(fetcher).toHaveBeenCalledWith('/ledger-api/api/v1/books',expect.objectContaining({headers:{Authorization:'Bearer renewed-ledger-token'}}))
+    expect(new Headers(fetcher.mock.calls[0]![1].headers).get('authorization')).toBe('Bearer renewed-ledger-token')
   })
   it('renews and retries a rejected GET once',async()=>{
     const dispatchEvent=vi.fn();vi.stubGlobal('window',{dispatchEvent})
@@ -57,6 +65,6 @@ describe('ledger session token lifecycle',()=>{
   it('keeps mock and isolated callers working without a configured token provider',async()=>{
     const fetcher=vi.fn().mockResolvedValue(new Response('{}'));vi.stubGlobal('fetch',fetcher)
     await authorizedRequest('/api','mock-token','/books')
-    expect(fetcher).toHaveBeenCalledWith('/api/books',expect.objectContaining({headers:{Authorization:'Bearer mock-token'}}))
+    expect(new Headers(fetcher.mock.calls[0]![1].headers).get('authorization')).toBe('Bearer mock-token')
   })
 })

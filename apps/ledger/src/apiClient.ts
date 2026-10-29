@@ -1,4 +1,4 @@
-import {timedFetch} from '@personal/platform/http'
+import {timedFetch,authenticatedJsonHeaders} from '@personal/platform/http'
 let sessionToken:((force?:boolean)=>Promise<string>)|undefined
 export function setSessionTokenProvider(provider?:typeof sessionToken){sessionToken=provider}
 export interface ApiSessionIssue {status:number;method:string;route:string;requestId:string;at:string}
@@ -13,7 +13,7 @@ export async function authorizedRequest(apiUrl:string,token:string,path:string,o
   const provider=sessionToken,method=(options.method||'GET').toUpperCase()
   const send=async(force=false)=>timedFetch(`${apiUrl.replace(/\/$/,'')}${path}`,{
     ...options,credentials:'omit',redirect:'error',cache:'no-store',
-    headers:{...Object.fromEntries(new Headers(options.headers)),Authorization:`Bearer ${provider?await provider(force):token}`,...(options.body?{'Content-Type':'application/json'}:{})},
+    headers:authenticatedJsonHeaders(provider?await provider(force):token,options),
   })
   let response=await send()
   // A read may retry once after renewal; mutations must never be replayed.

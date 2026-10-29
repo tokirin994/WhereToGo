@@ -25,7 +25,7 @@ export async function pushSnapshot(apiUrl: string, token: string, accountKey: st
   const metadata = readSyncMetadata(accountKey)
   const remote = await getRemoteSnapshot(apiUrl, token)
   const response = await authorizedRequest(apiUrl, token, '/api/v1/sync/snapshot', {
-    method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    method: 'PUT',
     body: JSON.stringify({ schemaVersion: snapshot.schemaVersion, expectedRevision: expectedRevision ?? remote.revision, snapshot }),
   })
   if (response.status === 409) throw new Error('云端版本已经变化，请先执行智能同步并处理冲突。')
