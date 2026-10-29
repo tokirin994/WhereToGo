@@ -9,11 +9,11 @@ import {pathToFileURL} from 'node:url'
 const {WTG_PUBLIC_ORIGIN,WTG_USERNAME,WTG_PASSWORD,WTG_PLAYWRIGHT_MODULE,WTG_BROWSER_REPORT_DIR}=process.env
 if(!WTG_PUBLIC_ORIGIN||!WTG_USERNAME||!WTG_PASSWORD||!WTG_PLAYWRIGHT_MODULE)throw Error('Set public origin, isolated test credentials and Playwright module path through environment variables')
 const origin=new URL(WTG_PUBLIC_ORIGIN).origin,args=process.argv.slice(2),bundleAt=args.indexOf('--bundle-dir')
-const bundle=bundleAt>=0?resolve(args[bundleAt+1]):null,legacy=args.includes('--legacy'),mobile=args.includes('--mobile')
+const bundle=bundleAt>=0?resolve(args[bundleAt+1]):null,legacy=args.includes('--legacy'),mobile=args.includes('--mobile'),testRejection=args.includes('--rejected-api')
 const {webkit}=await import(pathToFileURL(resolve(WTG_PLAYWRIGHT_MODULE)).href)
 const browser=await webkit.launch({headless:true})
-const context=await browser.newContext({viewport:mobile?{width:390,height:844}:{width:1440,height:1000},locale:'zh-CN',timezoneId:'Asia/Hong_Kong',colorScheme:'light'})
-let blockFrames=false,stage='setup',passwordForms=0
+const context=await browser.newContext({viewport:mobile?{width:390,height:844}:{width:1440,height:1000},isMobile:mobile,hasTouch:mobile,deviceScaleFactor:mobile?3:1,locale:'zh-CN',timezoneId:'Asia/Hong_Kong',colorScheme:'light'})
+let blockFrames=false,rejectLedgerRead=false,stage='setup',passwordForms=0
 const checks=[],runtimeErrors=[]
 const pass=name=>{checks.push(name);console.log('PASS WebKit '+name)}
 const ensure=(condition,message)=>{if(!condition)throw Error(message)}
@@ -29,6 +29,7 @@ if(legacy)await context.addInitScript(()=>{
 await context.route(origin+'/**',async route=>{
   const request=route.request(),url=new URL(request.url())
   if(blockFrames&&request.isNavigationRequest()&&request.frame().parentFrame())return route.abort()
+  if(rejectLedgerRead&&request.method()==='GET'&&['/ledger-api/api/v1/books','/ledger-api/api/v1/sync/snapshot'].includes(url.pathname))return route.fulfill({status:401,contentType:'application/json',headers:{'x-request-id':'test-ledger-rejection','cache-control':'no-store'},body:JSON.stringify({code:'invalid_token',message:'Test API rejection'})})
   const app=url.pathname.startsWith('/ledger/')?'ledger':url.pathname.startsWith('/travel/')?'travel':'portal'
   const relative=app==='portal'?url.pathname.slice(1):url.pathname.slice(app.length+2)
   let file=bundle?resolve(bundle,app,relative):null
@@ -99,6 +100,20 @@ try{
   await ledgerReady(page);await page.reload()
   await ledgerReady(page)
   pass('ledger opens and reloads without another login')
+  if(testRejection){
+    stage='delayed API rejection';rejectLedgerRead=true;blockFrames=true
+    await page.reload();await page.locator('.ledger-connection-notice').waitFor({timeout:30000})
+    await page.locator('.ledger-app .loading-state').waitFor({state:'hidden',timeout:30000})
+    ensure(await page.locator('.ledger-app').count()===1&&await page.locator('.auth-screen').count()===0,'An API rejection incorrectly returned the authenticated user to login')
+    ensure((await page.locator('.ledger-connection-notice').textContent()).includes('test-ledger-rejection'),'Safe request diagnostics were not shown')
+    // Observe the reported few-second delay instead of only checking first paint.
+    await page.waitForTimeout(10000)
+    ensure(await page.locator('.ledger-app').count()===1&&await page.locator('.auth-screen').count()===0,'Ledger dropped its login a few seconds after an API rejection')
+    rejectLedgerRead=false;await page.locator('.ledger-connection-notice button').filter({hasText:'重新连接'}).click()
+    await page.waitForURL(url=>!url.pathname.includes('/auth/'))
+    await page.locator('.ledger-connection-notice').waitFor({state:'hidden',timeout:30000});await ledgerReady(page)
+    pass('delayed API 401 retains the workspace and reconnects without a second login')
+  }
   stage='first-party SSO fallback';blockFrames=true
   const fresh=await context.newPage();await fresh.goto(origin+'/ledger/?__sso=1',{waitUntil:'domcontentloaded'})
   await ledgerReady(fresh,40000)

@@ -17,9 +17,9 @@ vi.mock('oidc-client-ts',()=>({
   },
 }))
 const origin='https://personal.example'
-function session(basePath='/',changed=vi.fn()){
+function session(basePath='/',changed=vi.fn(),sessionEnded=vi.fn()){
   return createIdentitySession({authority:origin+'/identity/realms/personal',clientId:'test-web',audience:'test-api',allowLoopback:false,basePath,
-    returnPath:path=>path==='/'||/^\/(travel|books)(?:\/|$)/.test(path),changed})
+    returnPath:path=>path==='/'||/^\/(travel|books)(?:\/|$)/.test(path),changed,sessionEnded})
 }
 beforeEach(()=>{
   vi.resetAllMocks()
@@ -234,5 +234,26 @@ describe('Safari session recovery',()=>{
     const listener=vi.mocked(window.addEventListener).mock.calls.find(args=>args[0]==='pageshow')?.[1]
     if(typeof listener==='function')listener({persisted:true} as PageTransitionEvent)
     await flush();expect(app.current).toBeNull();expect(window.location.reload).toHaveBeenCalled()
+  })
+})
+
+
+describe('safe identity end diagnostics',()=>{
+  it('reports a confirmed rejected refresh without including tokens in the reason',async()=>{
+    const value={...alice(),refresh_token:'dummy-refresh-token'},ended=vi.fn()
+    oidc.getUser.mockResolvedValue(value);oidc.silent.mockResolvedValue(value)
+    const app=session('/',vi.fn(),ended);await app.initialize()
+    oidc.silent.mockRejectedValueOnce({error:'invalid_grant'}).mockRejectedValueOnce({error:'login_required'})
+    await expect(app.accessToken(true)).rejects.toMatchObject({error:'login_required'})
+    expect(app.current).toBeNull();expect(ended).toHaveBeenCalledExactlyOnceWith('refresh_rejected')
+    expect(JSON.stringify(ended.mock.calls)).not.toMatch(/alice-token|dummy-refresh-token/)
+  })
+  it('does not announce an ended session for a transient network failure',async()=>{
+    const value={...alice(),refresh_token:'dummy-refresh-token'},ended=vi.fn()
+    oidc.getUser.mockResolvedValue(value);oidc.silent.mockResolvedValue(value)
+    const app=session('/',vi.fn(),ended);await app.initialize()
+    oidc.silent.mockRejectedValue(new Error('offline'))
+    await expect(app.accessToken(true)).rejects.toThrow('offline')
+    expect(app.current?.profile.sub).toBe('alice');expect(ended).not.toHaveBeenCalled()
   })
 })

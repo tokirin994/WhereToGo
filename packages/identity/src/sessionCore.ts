@@ -18,9 +18,11 @@ export interface SessionManager<U extends IdentityUser> {
   signinSilentCallback:()=>Promise<unknown>;signoutRedirectCallback:()=>Promise<unknown>
   signoutRedirect:(args:{id_token_hint?:string})=>Promise<void>
 }
+export type SessionEndReason='user_logout'|'remote_logout'|'refresh_rejected'|'sso_unavailable'|'account_changed'
 export interface IdentityConfig<U extends IdentityUser> {
   authority:string;clientId:string;audience:string;allowLoopback:boolean;basePath?:string;callbackBaseUrl?:string
   returnPath:(path:string)=>boolean;changed:(user:U|null)=>void;monitor?:boolean
+  sessionEnded?:(reason:SessionEndReason)=>void
 }
 export function createIdentitySessionCore<U extends IdentityUser>(config:IdentityConfig<U>,createManager:(settings:SessionSettings)=>SessionManager<U>){
   const authority=config.authority.replace(/\/$/,'')
@@ -75,13 +77,15 @@ export function createIdentitySessionCore<U extends IdentityUser>(config:Identit
     current=user;invalidated=false;refreshAvailable=!!user.refresh_token
     try{if(user.profile.sid)localStorage.setItem(sidKey,user.profile.sid)}catch{/* Storage may be disabled. */}
     if(previous&&previous.profile.sub!==user.profile.sub){
+      config.sessionEnded?.('account_changed')
       stopped=true;epoch++;current=null;config.changed(null)
       window.location.reload();return
     }
     config.changed(user)
     if(!previous)notify('login',user.profile.sub)
   }
-  async function clear(broadcast=false){
+  async function clear(broadcast=false,reason?:SessionEndReason){
+    if(reason&&(current||refreshAvailable))config.sessionEnded?.(reason)
     epoch++;current=null;refreshAvailable=false;config.changed(null)
     await manager?.removeUser()
     try{localStorage.removeItem(sidKey)}catch{/* Storage may be disabled. */}
@@ -115,7 +119,7 @@ export function createIdentitySessionCore<U extends IdentityUser>(config:Identit
         // An iframe unable to see IdP cookies is not evidence that a valid
         // refresh-token session ended (Safari privacy settings can block it).
         // A rejected refresh grant, however, must never restore cached tokens.
-        if(started===epoch&&(rejectedRefresh||(errorCode(cause)==='login_required'&&!refreshAvailable))){invalidated=true;await clear(!!current)}
+        if(started===epoch&&(rejectedRefresh||(errorCode(cause)==='login_required'&&!refreshAvailable))){invalidated=true;await clear(!!current,rejectedRefresh?'refresh_rejected':'sso_unavailable')}
         throw cause
       }finally{pendingEpoch=undefined}
     })()
@@ -124,17 +128,17 @@ export function createIdentitySessionCore<U extends IdentityUser>(config:Identit
   async function check(){
     if(!initialized||callbackPath||stopped||document.visibilityState==='hidden'||Date.now()-lastCheck<30000)return
     lastCheck=Date.now()
-    if(current&&conflicts(current)){stopped=true;await clear();window.location.reload();return}
+    if(current&&conflicts(current)){stopped=true;await clear(false,sharedEvent()?.type==='logout'?'remote_logout':'account_changed');window.location.reload();return}
     try{await renew(!current?.refresh_token)}catch{/* Keep an unexpired token on transient network/iframe errors. */}
   }
   const storage=(event:StorageEvent)=>{
     if(event.key!==eventKey||!event.newValue||callbackPath)return
     try{
       const value=JSON.parse(event.newValue)
-      if(value.type==='logout'){stopped=true;void clear()}
+      if(value.type==='logout'){stopped=true;void clear(false,'remote_logout')}
       else if(value.type==='login'&&value.sub!==current?.profile.sub){
         // Hide the previous account before any async check or workspace request.
-        if(current){stopped=true;void clear();window.location.reload()}
+        if(current){stopped=true;void clear(false,'account_changed');window.location.reload()}
         else{stopped=false;lastCheck=0;void check()}
       }
     }catch{/* Ignore malformed non-secret notifications. */}
@@ -152,12 +156,12 @@ export function createIdentitySessionCore<U extends IdentityUser>(config:Identit
     if(window.location.pathname===root+'auth/frontchannel'){
       const params=new URLSearchParams(window.location.search)
       let sid:string|null=null;try{sid=localStorage.getItem(sidKey)}catch{/* No matching session. */}
-      if(params.get('iss')===authority&&sid&&params.get('sid')===sid)await clear(true)
+      if(params.get('iss')===authority&&sid&&params.get('sid')===sid)await clear(true,'remote_logout')
       return
     }
     if(window.location.pathname===root+'auth/signed-out'){
       if(new URLSearchParams(window.location.search).has('state'))await manager!.signoutRedirectCallback()
-      await clear(true);window.location.replace(root+'?signedOut=1');return
+      await clear(true,'user_logout');window.location.replace(root+'?signedOut=1');return
     }
     if(window.location.pathname===root+'auth/callback'){
       const user=await manager!.signinRedirectCallback()
@@ -202,7 +206,7 @@ export function createIdentitySessionCore<U extends IdentityUser>(config:Identit
     async signOut(){
       validate();stopped=true
       const idToken=current?.id_token
-      await clear(true)
+      await clear(true,'user_logout')
       try{await manager!.signoutRedirect({id_token_hint:idToken})}
       catch{stopped=false;throw new Error('统一退出未完成，请重试或到账号中心结束会话')}
     },
