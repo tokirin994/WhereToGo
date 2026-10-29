@@ -28,6 +28,9 @@ async function ledgerReady(page,timeout=35000){
   ensure(await page.locator('.ledger-app .error-notice').count()===0,'Ledger initialization reported an error')
 }
 if(legacy)await context.addInitScript(()=>{
+  // Compatibility shims target our applications, not the identity provider's
+  // independently shipped login scripts.
+  if(location.pathname.startsWith('/identity/'))return
   Object.defineProperty(AbortSignal,'timeout',{value:undefined,configurable:true})
   Object.defineProperty(URLSearchParams.prototype,'size',{get:()=>undefined,configurable:true})
 })
