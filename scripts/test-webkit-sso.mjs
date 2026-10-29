@@ -17,6 +17,11 @@ let blockFrames=false,stage='setup',passwordForms=0
 const checks=[],runtimeErrors=[]
 const pass=name=>{checks.push(name);console.log('PASS WebKit '+name)}
 const ensure=(condition,message)=>{if(!condition)throw Error(message)}
+async function ledgerReady(page,timeout=35000){
+  await page.locator('.ledger-app').waitFor({timeout})
+  await page.locator('.ledger-app .loading-state').waitFor({state:'hidden',timeout})
+  ensure(await page.locator('.ledger-app .error-notice').count()===0,'Ledger initialization reported an error')
+}
 if(legacy)await context.addInitScript(()=>{
   Object.defineProperty(AbortSignal,'timeout',{value:undefined,configurable:true})
   Object.defineProperty(URLSearchParams.prototype,'size',{get:()=>undefined,configurable:true})
@@ -91,19 +96,22 @@ try{
   }
   pass('light and dark account appearance')
   stage='ledger launch';await page.locator('.account-app-ledger .account-app-launch').click()
-  await page.locator('.ledger-app').waitFor({timeout:35000});await page.reload()
-  await page.locator('.ledger-app').waitFor({timeout:35000})
+  await ledgerReady(page);await page.reload()
+  await ledgerReady(page)
   pass('ledger opens and reloads without another login')
   stage='first-party SSO fallback';blockFrames=true
   const fresh=await context.newPage();await fresh.goto(origin+'/ledger/?__sso=1',{waitUntil:'domcontentloaded'})
-  await fresh.locator('.ledger-app').waitFor({timeout:40000})
+  await ledgerReady(fresh,40000)
   ensure(!new URL(fresh.url()).searchParams.has('__sso'),'SSO marker was not consumed')
-  await fresh.reload();await fresh.locator('.ledger-app').waitFor({timeout:30000})
+  await fresh.reload();await ledgerReady(fresh)
   pass('fresh tab and refresh work with all iframe navigations blocked')
   await fresh.close()
   stage='return navigation';await page.goto(origin+'/account/',{waitUntil:'domcontentloaded'})
-  await page.locator('.account-app-grid').waitFor({timeout:30000});await page.goBack()
-  await page.locator('.ledger-app').waitFor({timeout:30000})
+  await page.locator('.account-app-grid').waitFor({timeout:30000})
+  await page.locator('.account-loading').waitFor({state:'hidden',timeout:35000})
+  ensure(await page.locator('.account-notice.error').count()===0,'Account did not recover its services on return')
+  await page.goBack()
+  await ledgerReady(page)
   pass('back navigation restores ledger session')
   stage='unified logout';blockFrames=false
   await page.goto(origin+'/',{waitUntil:'domcontentloaded'})

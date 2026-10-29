@@ -56,7 +56,7 @@ async function refresh(client,token){
 }
 async function accountJson(path,token){
   const response=await request(origin+path,{headers:{Authorization:'Bearer '+token,Accept:'application/json'}})
-  ensure(response.status===200&&response.headers.get('content-type')?.includes('application/json'),'Account endpoint must return JSON, not an HTML page: '+path)
+  ensure(response.status===200&&response.headers.get('content-type')?.includes('application/json'),'Account endpoint must return JSON: '+path+' (HTTP '+response.status+')')
   return response.json()
 }
 await authorize(clients[1],{silent:true,anonymous:true});pass('匿名进入子应用：静默认证返回未登录，不显示登录表单')
