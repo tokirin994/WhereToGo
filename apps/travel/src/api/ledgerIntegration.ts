@@ -1,3 +1,4 @@
+import {timedFetch} from '@personal/platform/http'
 import { smartLedgerUrl } from '../appLinks'
 
 export interface TravelLedgerContext {
@@ -20,11 +21,11 @@ const smartLedgerPublicUrl = smartLedgerUrl
 export async function openTravelLedger(trip: TravelLedgerContext, accessToken: string): Promise<void> {
   if (!ledgerApiUrl) throw new Error('SmartLedger API 地址尚未配置')
 
-  const response = await fetch(
+  const response = await timedFetch(
     `${ledgerApiUrl}/api/v1/integrations/wheretogo/trips/${encodeURIComponent(trip.id)}/open`,
     {
       method: 'POST',
-      credentials: 'omit', redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(90000),
+      credentials: 'omit', redirect: 'error', cache: 'no-store',
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',

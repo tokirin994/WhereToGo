@@ -1,8 +1,9 @@
+import {timedFetch} from '@personal/platform/http'
 let sessionToken:((force?:boolean)=>Promise<string>)|undefined
 export function setSessionTokenProvider(provider?:typeof sessionToken){sessionToken=provider}
 export async function authorizedRequest(apiUrl:string,token:string,path:string,options:RequestInit={}):Promise<Response>{
-  const send=async(force=false)=>fetch(`${apiUrl.replace(/\/$/,'')}${path}`,{
-    ...options,credentials:'omit',redirect:'error',cache:'no-store',signal:options.signal||AbortSignal.timeout(90000),
+  const send=async(force=false)=>timedFetch(`${apiUrl.replace(/\/$/,'')}${path}`,{
+    ...options,credentials:'omit',redirect:'error',cache:'no-store',
     headers:{...Object.fromEntries(new Headers(options.headers)),Authorization:`Bearer ${sessionToken?await sessionToken(force):token}`,...(options.body?{'Content-Type':'application/json'}:{})},
   })
   let response=await send()

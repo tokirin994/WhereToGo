@@ -1,3 +1,4 @@
+import {timedFetch} from '@personal/platform/http'
 import { applicationAccessToken } from './applicationAccess'
 import { accessToken, accountConsoleUrl, identity } from './auth'
 import { platform } from './appLinks'
@@ -20,7 +21,7 @@ async function read<T>(response:Response):Promise<T>{
 }
 export async function accountRequest<T>(path:string,method='GET',body?:unknown):Promise<T>{
   if(!['/','/sessions','/applications'].includes(path)&&!/^\/sessions\/[a-zA-Z0-9_-]+$/.test(path))throw new Error('无效的账号操作')
-  const send=async()=>fetch(accountConsoleUrl.replace(/\/$/,'')+path,{method,credentials:'omit',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(20000),headers:{Authorization:'Bearer '+await accessToken(),Accept:'application/json',...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})})
+  const send=async()=>timedFetch(accountConsoleUrl.replace(/\/$/,'')+path,{method,credentials:'omit',redirect:'error',cache:'no-store',headers:{Authorization:'Bearer '+await accessToken(),Accept:'application/json',...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})},20000)
   let response=await send()
   // Sessions created before the self-service role rollout need a fresh access token.
   // Retry GET only; never replay a mutation whose first outcome may be ambiguous.
@@ -33,5 +34,5 @@ export async function accountRequest<T>(path:string,method='GET',body?:unknown):
 export async function ledgerAccountRequest<T>(method='GET',body?:unknown):Promise<T>{
   const base=platform.application('ledger').apiUrl.replace(/\/$/,'')
   if(!base)throw new Error('记账服务地址尚未配置')
-  return read<T>(await fetch(base+'/api/v1/sync/nutstore/credentials',{method,credentials:'omit',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(20000),headers:{Authorization:'Bearer '+await applicationAccessToken('ledger'),Accept:'application/json',...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})}))
+  return read<T>(await timedFetch(base+'/api/v1/sync/nutstore/credentials',{method,credentials:'omit',redirect:'error',cache:'no-store',headers:{Authorization:'Bearer '+await applicationAccessToken('ledger'),Accept:'application/json',...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})},20000))
 }

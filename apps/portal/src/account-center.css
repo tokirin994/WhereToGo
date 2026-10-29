@@ -1,5 +1,6 @@
-.account-center { --account-danger: #b84d61; --muted:#68788a; --account-soft: color-mix(in srgb, var(--panel) 65%, var(--portal-bg)); background: radial-gradient(ellipse at 90% 0%,color-mix(in srgb,var(--portal-travel-soft) 70%,transparent),transparent 50%),var(--portal-bg); }
+.account-center { --account-danger: #b84d61; --muted:#68788a; --account-soft: var(--portal-raised); background: radial-gradient(ellipse at 90% 0%,color-mix(in srgb,var(--portal-travel-soft) 70%,transparent),transparent 50%),var(--portal-bg); }
 .account-center *, .account-center *::before, .account-center *::after { box-sizing: border-box; }
+.account-center button, .account-center input:not([type=checkbox]), .account-center select { -webkit-appearance: none; appearance: none; }
 .account-center a { color: var(--accent); text-decoration: none; }
 .account-center .account-topbar { max-width: 1240px; padding: 25px 40px; border-bottom: 1px solid var(--border); }
 .account-back { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted) !important; }
@@ -221,3 +222,5 @@
   .account-connected { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .account-spinning { animation: none; }.account-app,.account-app-launch>svg,.account-button,.account-tabs button,.account-quick-grid button,.account-summary-grid button{transition:none}.account-app-launch:hover>svg{transform:none} }
+
+@supports(color:color-mix(in srgb,black,white)){.account-center{--account-soft:color-mix(in srgb,var(--panel) 65%,var(--portal-bg))}}

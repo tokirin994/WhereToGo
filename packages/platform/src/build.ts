@@ -1,5 +1,40 @@
 interface BuildContext {error:(message:string)=>never;emitFile:(asset:{type:'asset';fileName:string;source:string})=>unknown}
 
+/** Retain theme-aware fallback declarations for Safari before color-mix().
+ * Variable colors cannot be reduced to constants by the CSS compiler.
+ */
+export function fallbackColors(value:string):string{
+  return replaceMix(value)
+}
+function replaceMix(value:string):string{
+  const start=value.indexOf('color-mix(')
+  if(start<0)return value
+  let depth=1,end=start+10,part='',parts:string[]=[]
+  for(;end<value.length;end++){
+    const char=value[end]!
+    if(char==='(')depth++
+    if(char===')')depth--
+    if(!depth){parts.push(part.trim());break}
+    if(char===','&&depth===1){parts.push(part.trim());part=''}else part+=char
+  }
+  if(depth||parts.length!==3)return value
+  const color=(part:string)=>part.replace(/\s+[\d.]+%\s*$/,'').trim()
+  const fallback=color(parts[2]!)==='transparent'?color(parts[1]!):color(parts[2]!)
+  return value.slice(0,start)+replaceMix(fallback)+replaceMix(value.slice(end+1))
+}
+interface CssDeclaration {prop:string;value:string;cloneBefore:(overrides:{value:string})=>unknown}
+export const browserCompatibility={
+  build:{target:['es2020','safari15.4'],cssTarget:'safari15.4'},
+  css:{postcss:{plugins:[{postcssPlugin:'personal-safari-fallbacks',Declaration(decl:CssDeclaration){
+    if(decl.prop.startsWith('--'))return
+    if(decl.value.includes('color-mix(')){
+      const fallback=decl.prop==='box-shadow'?'none':fallbackColors(decl.value)
+      if(fallback!==decl.value)decl.cloneBefore({value:fallback})
+    }
+    if(/\d+dvh\b/.test(decl.value))decl.cloneBefore({value:decl.value.replace(/dvh\b/g,'vh')})
+  }}]}},
+}
+
 /** Cloudflare Pages headers are generated from public build settings, never from server secrets. */
 export function securityHeaders(env:Record<string,string>){
   return {name:'production-security-headers',apply:'build' as const,generateBundle(this:BuildContext){

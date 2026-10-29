@@ -46,6 +46,12 @@ export function createPlatform(env:Environment,origin:string,development=false){
     url.search=new URLSearchParams({app:id,returnTo:target.pathname+target.search+target.hash,intent}).toString()
     return url.href
   }
-  return {portalUrl:portal,accountUrl:new URL('account/',portal).href,applications,application,launchTarget,loginUrl,authMode:env.VITE_AUTH_MODE==='standalone'?'standalone':'portal'}
+  function launchUrl(id:string,returnTo?:string){
+    const target=launchTarget(id,returnTo)
+    // This non-secret, consumed marker permits one first-party prompt=none
+    // grant if iframe SSO is unavailable. It carries no session credentials.
+    target.searchParams.set('__sso','1');return target.href
+  }
+  return {portalUrl:portal,accountUrl:new URL('account/',portal).href,applications,application,launchTarget,launchUrl,loginUrl,authMode:env.VITE_AUTH_MODE==='standalone'?'standalone':'portal'}
 }
 export function browserPlatform(env:Environment){return createPlatform(env,window.location.origin,env.DEV===true)}

@@ -5,7 +5,7 @@ type State='loading'|'error'|'ready'
 defineProps<{sessionCount:number;providerCount:number;cloudConfigured:boolean;identityState:State;providerState:State;ledgerState:State;theme:string}>()
 const emit=defineEmits<{navigate:[tab:string];provider:[id:string];theme:[value:'system'|'light'|'dark']}>()
 const themes=[{id:'light',name:'浅色',icon:Sun},{id:'dark',name:'夜间',icon:Moon},{id:'system',name:'跟随系统',icon:Monitor}] as const
-function launch(id:string){const url=new URL(platform.application(id).url);url.searchParams.set('__sso','1');return url.href}
+const launch=platform.launchUrl
 </script>
 <template>
  <div class="account-overview">

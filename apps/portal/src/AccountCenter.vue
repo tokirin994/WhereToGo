@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ArrowLeft, ArrowUpRight, Check, ChevronRight, Cloud, Fingerprint, KeyRound, LayoutGrid, LockKeyhole, Monitor, RefreshCw, ShieldCheck, UserRound } from '@lucide/vue'
 import { accountConsoleUrl, authError, currentUser, identity, signOut } from './auth'
-import { smartLedgerUrl, travelUrl } from './appLinks'
+import {platform} from './appLinks'
 import { apiRequest } from './api/client'
 import { accountRequest, ledgerAccountRequest, type AccountProfile, type AccountSession, type ProviderList, type NutstoreStatus } from './accountApi'
 import { providerPresets } from './providerPresets'
@@ -23,7 +23,8 @@ const selected=ref('deepseek'),apiKey=ref(''),baseUrl=ref(''),model=ref(''),prot
 const names=ref({firstName:'',lastName:''}),nutstore=ref<NutstoreStatus|null>(null),nutstoreDraft=ref({username:'',appPassword:''})
 const selectedStatus=computed(()=>providers.value.providers.find(row=>row.provider===selected.value))
 const name=computed(()=>[profile.value?.firstName,profile.value?.lastName].filter(Boolean).join(' ')||profile.value?.username||String(currentUser.value?.profile.preferred_username||'我的账号'))
-const ledgerSettings=new URL('?section=settings',smartLedgerUrl).href
+const travelUrl=platform.launchUrl('travel'),smartLedgerUrl=platform.launchUrl('ledger')
+const ledgerSettings=platform.launchUrl('ledger',new URL('?section=settings',platform.application('ledger').url).href)
 const sections=[
   {id:'overview',name:'账号总览',description:'我的应用与常用设置',icon:LayoutGrid},
   {id:'profile',name:'个人资料',description:'称呼与绑定邮箱',icon:UserRound},
@@ -61,7 +62,7 @@ async function testProvider(){await act('test',async()=>{const result=await apiR
 async function revokeSession(id?:string){if(!window.confirm(id?'结束这个设备的登录会话？':'退出其他设备的登录会话？当前设备会保留。'))return;await act('session',async()=>{await accountRequest('/sessions'+(id?'/'+encodeURIComponent(id):''),'DELETE');await loadIdentity();message.value='登录会话已结束；已签发的短期访问令牌可能在到期前仍有效'})}
 async function saveNutstore(){await act('nutstore',async()=>{nutstore.value=await ledgerAccountRequest<NutstoreStatus>('PUT',nutstoreDraft.value);nutstoreDraft.value={username:'',appPassword:''};message.value='已更新记账服务的加密凭据；在 SmartLedger 中立即生效'})}
 async function removeNutstore(){if(!window.confirm('删除当前账号在记账服务中保存的坚果云凭据？不会删除坚果云备份文件。'))return;await act('nutstore-delete',async()=>{nutstore.value=await ledgerAccountRequest<NutstoreStatus>('DELETE');nutstoreDraft.value={username:'',appPassword:''};message.value='已删除记账服务的坚果云凭据'})}
-onMounted(async()=>{selectProvider(selected.value);await load();const params=new URLSearchParams(location.search);if(params.has('accountAction')){message.value=params.get('actionResult')==='success'?'账号安全设置已更新':params.get('actionResult')==='cancelled'?'已取消修改':'已返回账号中心，请核对最新资料';params.delete('accountAction');params.delete('actionResult');history.replaceState({},'',location.pathname+(params.size?'?'+params:''))}})
+onMounted(async()=>{selectProvider(selected.value);await load();const params=new URLSearchParams(location.search);if(params.has('accountAction')){message.value=params.get('actionResult')==='success'?'账号安全设置已更新':params.get('actionResult')==='cancelled'?'已取消修改':'已返回账号中心，请核对最新资料';params.delete('accountAction');params.delete('actionResult');history.replaceState({},'',location.pathname+(params.toString()?'?'+params:''))}})
 </script>
 <template>
   <main class="personal-portal account-center" :class="`portal-${theme}`">

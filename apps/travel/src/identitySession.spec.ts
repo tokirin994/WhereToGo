@@ -183,3 +183,56 @@ describe('SSO account and logout isolation',()=>{
     await expect(app.accessToken()).rejects.toThrow('offline')
   })
 })
+
+
+describe('Safari session recovery',()=>{
+  const refreshed=()=>({...alice(),refresh_token:'dummy-refresh-token'})
+  it('renews an existing session without an iframe on page load and focus',async()=>{
+    oidc.getUser.mockResolvedValue(refreshed());oidc.silent.mockResolvedValue(refreshed())
+    const app=session();await app.initialize()
+    expect(oidc.silent).toHaveBeenLastCalledWith({forceIframeAuth:false})
+    vi.setSystemTime(Date.now()+31000);focus();await flush()
+    expect(oidc.silent).toHaveBeenCalledTimes(2)
+    expect(oidc.silent).toHaveBeenLastCalledWith({forceIframeAuth:false})
+    expect(app.current?.profile.sub).toBe('alice')
+  })
+  it('does not clear a valid refresh session when Safari iframe checks cannot see cookies',async()=>{
+    oidc.getUser.mockResolvedValue(refreshed());oidc.silent.mockResolvedValue(refreshed())
+    const app=session();await app.initialize();oidc.remove.mockClear()
+    oidc.silent.mockRejectedValue({error:'login_required'})
+    vi.setSystemTime(Date.now()+31000);focus();await flush()
+    expect(app.current?.profile.sub).toBe('alice');expect(oidc.remove).not.toHaveBeenCalled()
+    expect(oidc.redirect).not.toHaveBeenCalled()
+  })
+  it('never restores cached credentials after a rejected refresh and failed iframe recovery',async()=>{
+    oidc.getUser.mockResolvedValue(refreshed())
+    oidc.silent.mockRejectedValueOnce({error:'invalid_grant'}).mockRejectedValueOnce({error:'login_required'})
+    const app=session();await app.initialize()
+    expect(app.current).toBeNull();expect(oidc.remove).toHaveBeenCalled();expect(oidc.redirect).not.toHaveBeenCalled()
+  })
+  it('does not mount a saved account that differs from the last shared login',async()=>{
+    vi.stubGlobal('localStorage',{getItem:vi.fn(()=>JSON.stringify({type:'login',sub:'bob'})),setItem:vi.fn(),removeItem:vi.fn()})
+    oidc.getUser.mockResolvedValue(refreshed());oidc.silent.mockRejectedValue(new Error('iframe blocked'))
+    const changed=vi.fn(),app=session('/',changed)
+    await expect(app.initialize()).rejects.toThrow('统一登录暂时无法连接')
+    expect(app.current).toBeNull();expect(changed).not.toHaveBeenCalledWith(expect.objectContaining({profile:expect.objectContaining({sub:'alice'})}))
+    expect(oidc.remove).toHaveBeenCalled()
+  })
+  it('checks bfcache restored pages without waiting for focus throttling',async()=>{
+    oidc.getUser.mockResolvedValue(refreshed());oidc.silent.mockResolvedValue(refreshed())
+    const app=session();await app.initialize();oidc.silent.mockClear()
+    const listener=vi.mocked(window.addEventListener).mock.calls.find(args=>args[0]==='pageshow')?.[1]
+    if(typeof listener==='function')listener({persisted:true} as PageTransitionEvent)
+    await flush();expect(oidc.silent).toHaveBeenCalledExactlyOnceWith({forceIframeAuth:false})
+    app.dispose();expect(window.removeEventListener).toHaveBeenCalledWith('pageshow',listener)
+  })
+  it('clears a restored account before exposing it after another tab switches accounts',async()=>{
+    const getItem=vi.fn(()=>JSON.stringify({type:'login',sub:'alice'}))
+    vi.stubGlobal('localStorage',{getItem,setItem:vi.fn(),removeItem:vi.fn()})
+    oidc.getUser.mockResolvedValue(refreshed());oidc.silent.mockResolvedValue(refreshed())
+    const app=session();await app.initialize();getItem.mockReturnValue(JSON.stringify({type:'login',sub:'bob'}))
+    const listener=vi.mocked(window.addEventListener).mock.calls.find(args=>args[0]==='pageshow')?.[1]
+    if(typeof listener==='function')listener({persisted:true} as PageTransitionEvent)
+    await flush();expect(app.current).toBeNull();expect(window.location.reload).toHaveBeenCalled()
+  })
+})

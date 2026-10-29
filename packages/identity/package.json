@@ -2,7 +2,7 @@
   "name": "@personal/identity",
   "version": "1.0.0",
   "type": "module",
-  "exports": {".": "./src/index.ts", "./vue": "./src/vueSession.ts", "./AccountGate.vue": "./src/AccountGate.vue"},
+  "exports": {".": "./src/index.ts", "./vue": "./src/vueSession.ts", "./storage": "./src/storage.ts", "./AccountGate.vue": "./src/AccountGate.vue"},
   "dependencies": {"oidc-client-ts": "^3.5.0", "@personal/platform": "file:../platform"},
   "peerDependencies": {"vue": "^3.5.0", "@lucide/vue": "^1.57.0"}
 }

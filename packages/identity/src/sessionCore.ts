@@ -1,6 +1,6 @@
 /** Shared OIDC lifecycle. Apps retain separate PKCE clients and audience-bound tokens. */
 export interface IdentityUser {
-  access_token:string; id_token?:string; expired?:boolean; expires_in?:number
+  access_token:string; id_token?:string; refresh_token?:string; expired?:boolean; expires_in?:number
   profile:{sub:string;sid?:string}; state?:unknown
 }
 interface RedirectArgs {ui_locales?:string;prompt?:string;max_age?:number;extraQueryParams?:Record<string,string>;state?:unknown}
@@ -47,7 +47,7 @@ export function createIdentitySessionCore<U extends IdentityUser>(config:Identit
     validateSubOnSilentRenew:false,
     extraQueryParams:{audience:config.audience},
   }):null
-  let current:U|null=null,stopped=false,initialized=false,epoch=0,lastCheck=0
+  let current:U|null=null,stopped=false,initialized=false,invalidated=false,refreshAvailable=false,epoch=0,lastCheck=0
   let renewing:Promise<U|null>|undefined,initializing:Promise<void>|undefined,pendingEpoch:number|undefined
   let timer:ReturnType<typeof setInterval>|undefined
   const callbackPath=window.location.pathname.startsWith(root+'auth/')
@@ -65,10 +65,14 @@ export function createIdentitySessionCore<U extends IdentityUser>(config:Identit
   function notify(type:'login'|'logout',sub?:string){
     try{localStorage.setItem(eventKey,JSON.stringify({type,sub,id:crypto.randomUUID()}))}catch{/* Notifications are best effort. */}
   }
+  function sharedEvent():{type?:string;sub?:string}|undefined{
+    try{return JSON.parse(localStorage.getItem(eventKey)||'null')||undefined}catch{return undefined}
+  }
+  function conflicts(user:U){const value=sharedEvent();return value?.type==='logout'||(value?.type==='login'&&value.sub!==user.profile.sub)}
   function loaded(user:U){
     if(stopped||(pendingEpoch!==undefined&&pendingEpoch!==epoch))return
     const previous=current
-    current=user
+    current=user;invalidated=false;refreshAvailable=!!user.refresh_token
     try{if(user.profile.sid)localStorage.setItem(sidKey,user.profile.sid)}catch{/* Storage may be disabled. */}
     if(previous&&previous.profile.sub!==user.profile.sub){
       stopped=true;epoch++;current=null;config.changed(null)
@@ -78,7 +82,7 @@ export function createIdentitySessionCore<U extends IdentityUser>(config:Identit
     if(!previous)notify('login',user.profile.sub)
   }
   async function clear(broadcast=false){
-    epoch++;current=null;config.changed(null)
+    epoch++;current=null;refreshAvailable=false;config.changed(null)
     await manager?.removeUser()
     try{localStorage.removeItem(sidKey)}catch{/* Storage may be disabled. */}
     if(broadcast)notify('logout')
@@ -91,20 +95,27 @@ export function createIdentitySessionCore<U extends IdentityUser>(config:Identit
     const started=epoch
     renewing=(async()=>{
       pendingEpoch=started
+      let rejectedRefresh=false
       try{
         let user:U|null
         try{user=await manager!.signinSilent({forceIframeAuth:forceIframe})}
         catch(cause){
           // A duplicated tab or an older client can have a rotated refresh token.
           // Recover through the IdP cookie, never by starting a redirect loop.
-          if(!forceIframe&&errorCode(cause)==='invalid_grant')user=await manager!.signinSilent({forceIframeAuth:true})
+          if(!forceIframe&&errorCode(cause)==='invalid_grant'){
+            rejectedRefresh=true
+            user=await manager!.signinSilent({forceIframeAuth:true})
+          }
           else throw cause
         }
         if(started!==epoch||stopped){await manager!.removeUser();return null}
         if(user)loaded(user)
         return user
       }catch(cause){
-        if(started===epoch&&errorCode(cause)==='login_required')await clear(!!current)
+        // An iframe unable to see IdP cookies is not evidence that a valid
+        // refresh-token session ended (Safari privacy settings can block it).
+        // A rejected refresh grant, however, must never restore cached tokens.
+        if(started===epoch&&(rejectedRefresh||(errorCode(cause)==='login_required'&&!refreshAvailable))){invalidated=true;await clear(!!current)}
         throw cause
       }finally{pendingEpoch=undefined}
     })()
@@ -113,22 +124,28 @@ export function createIdentitySessionCore<U extends IdentityUser>(config:Identit
   async function check(){
     if(!initialized||callbackPath||stopped||document.visibilityState==='hidden'||Date.now()-lastCheck<30000)return
     lastCheck=Date.now()
-    try{await renew(true)}catch{/* Network/iframe/consent errors do not invalidate an unexpired token. */}
+    if(current&&conflicts(current)){stopped=true;await clear();window.location.reload();return}
+    try{await renew(!current?.refresh_token)}catch{/* Keep an unexpired token on transient network/iframe errors. */}
   }
   const storage=(event:StorageEvent)=>{
     if(event.key!==eventKey||!event.newValue||callbackPath)return
     try{
       const value=JSON.parse(event.newValue)
       if(value.type==='logout'){stopped=true;void clear()}
-      else if(value.type==='login'&&value.sub!==current?.profile.sub){stopped=false;lastCheck=0;void check()}
+      else if(value.type==='login'&&value.sub!==current?.profile.sub){
+        // Hide the previous account before any async check or workspace request.
+        if(current){stopped=true;void clear();window.location.reload()}
+        else{stopped=false;lastCheck=0;void check()}
+      }
     }catch{/* Ignore malformed non-secret notifications. */}
   }
   const focused=()=>void check()
+  const restored=(event:PageTransitionEvent)=>{if(event.persisted){lastCheck=0;void check()}}
   manager?.events.addUserLoaded(loaded)
   manager?.events.addAccessTokenExpiring(()=>{if(!stopped)void renew().catch(()=>{})})
   manager?.events.addAccessTokenExpired(()=>{if(!stopped)void renew().catch(()=>{})})
   window.addEventListener('storage',storage)
-  if(config.monitor!==false){window.addEventListener('focus',focused);document.addEventListener('visibilitychange',focused)}
+  if(config.monitor!==false){window.addEventListener('focus',focused);window.addEventListener('pageshow',restored);document.addEventListener('visibilitychange',focused)}
   async function initialize(){
     validate()
     if(window.location.pathname===root+'auth/silent'){await manager!.signinSilentCallback();return}
@@ -155,11 +172,15 @@ export function createIdentitySessionCore<U extends IdentityUser>(config:Identit
       }
       window.location.replace(target.pathname+target.search+target.hash);return
     }
-    const saved=await manager!.getUser()
-    // Even a newly opened/duplicated tab obtains its own client tokens from SSO.
-    // Do not mount an old account's workspace before confirming the IdP subject.
-    try{await renew(true)}catch(cause){
-      if(errorCode(cause)!=='login_required'&&saved&&!saved.expired)loaded(saved)
+    let saved=await manager!.getUser()
+    // Cross-tab login/logout notifications also survive Safari's back/forward
+    // cache. Discard a previous account before restoring its workspace.
+    if(saved&&conflicts(saved)){await manager!.removeUser();saved=null}
+    refreshAvailable=!!saved?.refresh_token
+    // Use the client's refresh grant first. Forced iframe checks on every load
+    // discard working sessions when iframe cookie access is unavailable.
+    try{await renew(!saved?.refresh_token)}catch(cause){
+      if(!invalidated&&saved&&!saved.expired&&!conflicts(saved))loaded(saved)
       else if(!['login_required','interaction_required','consent_required','account_selection_required'].includes(errorCode(cause))&&!saved)throw new Error('统一登录暂时无法连接，请点击登录重试')
     }
     initialized=true;lastCheck=Date.now()
@@ -185,7 +206,7 @@ export function createIdentitySessionCore<U extends IdentityUser>(config:Identit
       try{await manager!.signoutRedirect({id_token_hint:idToken})}
       catch{stopped=false;throw new Error('统一退出未完成，请重试或到账号中心结束会话')}
     },
-    clear,dispose(){if(timer)clearInterval(timer);window.removeEventListener('storage',storage);window.removeEventListener('focus',focused);document.removeEventListener('visibilitychange',focused)},
+    clear,dispose(){if(timer)clearInterval(timer);window.removeEventListener('storage',storage);window.removeEventListener('focus',focused);window.removeEventListener('pageshow',restored);document.removeEventListener('visibilitychange',focused)},
     get current(){return current},
   }
 }

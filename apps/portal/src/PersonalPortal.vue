@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { ArrowRight, ArrowUpRight, BookOpen, Camera, Check, Compass, LayoutGrid, MapPin, Monitor, Moon, Route, Sun, Wallet } from '@lucide/vue'
 import AppSwitcher from './AppSwitcher.vue'
-import { platform,smartLedgerUrl } from './appLinks'
+import { platform } from './appLinks'
 import { authAction, authError, currentUser, initializeAuth, registrationEnabled, register, signIn, signOut } from './auth'
 import './portal.css'
 type Theme='system'|'light'|'dark'
@@ -23,7 +23,7 @@ function openApplication(event:MouseEvent,name:string){
   const destination=new URL(platform.loginUrl(name,platform.application(name).url))
   void signIn(destination.pathname+destination.search)
 }
-onMounted(async()=>{await initializeAuth();if(currentUser.value&&new URLSearchParams(window.location.search).get('openApp')==='ledger')window.location.replace(smartLedgerUrl)})
+onMounted(async()=>{await initializeAuth();if(currentUser.value&&new URLSearchParams(window.location.search).get('openApp')==='ledger')window.location.replace(platform.launchUrl('ledger'))})
 </script>
 <template>
   <div class="personal-portal" :class="`portal-${theme}`">
@@ -34,7 +34,7 @@ onMounted(async()=>{await initializeAuth();if(currentUser.value&&new URLSearchPa
       <p v-if="authAction" class="portal-auth-status" role="status">正在连接统一账号服务，请稍候…</p>
       <section class="portal-apps" aria-labelledby="portal-apps-title"><header class="portal-section-heading"><div><span>YOUR APPLICATIONS</span><h2 id="portal-apps-title">我的应用</h2></div><span>{{ String(platform.applications.length).padStart(2,'0') }} <small>个应用</small></span></header>
         <div class="portal-app-grid">
-          <a v-for="app in platform.applications" :key="app.id" :href="app.url" @click="openApplication($event,app.id)" class="portal-app-card" :class="'portal-'+app.id"><div class="portal-card-heading"><span class="portal-app-icon"><Compass v-if="app.kind==='travel'" :size="27"/><BookOpen v-else-if="app.kind==='ledger'" :size="26"/><LayoutGrid v-else :size="26"/></span><span class="portal-app-type">{{ app.label }}</span><ArrowUpRight :size="21"/></div><div class="portal-app-copy"><small>{{ app.name.toUpperCase() }}</small><h3>{{ app.title }}</h3><p>{{ app.description }}</p></div><div v-if="app.kind==='travel'" class="portal-app-art portal-map-art" aria-hidden="true"><div class="portal-map-grid"></div><svg viewBox="0 0 460 135" fill="none"><path d="M-15 110C55 100 60 37 136 57S242 128 293 62 394 21 476 35" stroke="currentColor" stroke-width="3" stroke-dasharray="6 7"/><circle cx="136" cy="57" r="7"/><circle cx="293" cy="62" r="7"/></svg><span class="portal-map-pin"><MapPin :size="25"/></span><span class="portal-map-label"><Route :size="14"/>每一站，都有安排</span></div><div v-else-if="app.kind==='ledger'" class="portal-app-art portal-finance-art" aria-hidden="true"><span class="portal-finance-sheet"><i v-for="n in 3" :key="n"><span></span><Check :size="12"/></i></span><div class="portal-finance-bars"><i v-for="n in 7" :key="n"></i></div><span class="portal-finance-label"><Camera :size="14"/>一张截图，轻松记账</span></div><div class="portal-card-features"><span v-for="feature in app.features" :key="feature">{{ feature }}</span></div><footer><span>打开 {{ app.name }}</span><span class="portal-open-arrow"><ArrowRight :size="18"/></span></footer></a>
+          <a v-for="app in platform.applications" :key="app.id" :href="platform.launchUrl(app.id)" @click="openApplication($event,app.id)" class="portal-app-card" :class="'portal-'+app.id"><div class="portal-card-heading"><span class="portal-app-icon"><Compass v-if="app.kind==='travel'" :size="27"/><BookOpen v-else-if="app.kind==='ledger'" :size="26"/><LayoutGrid v-else :size="26"/></span><span class="portal-app-type">{{ app.label }}</span><ArrowUpRight :size="21"/></div><div class="portal-app-copy"><small>{{ app.name.toUpperCase() }}</small><h3>{{ app.title }}</h3><p>{{ app.description }}</p></div><div v-if="app.kind==='travel'" class="portal-app-art portal-map-art" aria-hidden="true"><div class="portal-map-grid"></div><svg viewBox="0 0 460 135" fill="none"><path d="M-15 110C55 100 60 37 136 57S242 128 293 62 394 21 476 35" stroke="currentColor" stroke-width="3" stroke-dasharray="6 7"/><circle cx="136" cy="57" r="7"/><circle cx="293" cy="62" r="7"/></svg><span class="portal-map-pin"><MapPin :size="25"/></span><span class="portal-map-label"><Route :size="14"/>每一站，都有安排</span></div><div v-else-if="app.kind==='ledger'" class="portal-app-art portal-finance-art" aria-hidden="true"><span class="portal-finance-sheet"><i v-for="n in 3" :key="n"><span></span><Check :size="12"/></i></span><div class="portal-finance-bars"><i v-for="n in 7" :key="n"></i></div><span class="portal-finance-label"><Camera :size="14"/>一张截图，轻松记账</span></div><div class="portal-card-features"><span v-for="feature in app.features" :key="feature">{{ feature }}</span></div><footer><span>打开 {{ app.name }}</span><span class="portal-open-arrow"><ArrowRight :size="18"/></span></footer></a>
         </div>
       </section>
       <aside class="portal-connection"><span><LayoutGrid :size="18"/></span><div><b>各自专注，也能互相连接</b><p>日常记账直接打开 SmartLedger；旅行中的费用，从对应行程进入专属旅行账本。</p></div><span class="portal-connection-mark"><Compass :size="18"/><span>＋</span><BookOpen :size="18"/></span></aside>

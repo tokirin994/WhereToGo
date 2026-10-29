@@ -67,7 +67,7 @@ onMounted(async () => {
       if(identityCallback)return
       if(travelHandoff.has('__sso')){
         travelHandoff.delete('__sso')
-        const target=window.location.pathname+(travelHandoff.size?'?'+travelHandoff.toString():'')+window.location.hash
+        const target=window.location.pathname+(travelHandoff.toString()?'?'+travelHandoff.toString():'')+window.location.hash
         window.history.replaceState({},'',target)
         if(!user.value){await identity.resumeSSO(target);return}
       }

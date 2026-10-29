@@ -19,7 +19,9 @@ const SystemPage=asyncPage(()=>import('./ApiManagement.vue'),'服务管理')
 const AccountPage=asyncPage(()=>import('./AccountCenter.vue'),'账号中心')
 const HomePage=asyncPage(()=>import('./PersonalPortal.vue'),'个人空间')
 const Page=login?LoginPage:system?SystemPage:account?AccountPage:HomePage
-window.addEventListener('pagehide',()=>identity.dispose(),{once:true})
+// Safari restores this document from bfcache with its JS heap intact. Keep the
+// identity listeners alive for persisted pages; pageshow revalidates the session.
+window.addEventListener('pagehide',event=>{if(!event.persisted)identity.dispose()})
 document.title = system ? 'API 管理 · 个人门户' : account ? '账号与服务 · 我的空间' : login ? '统一登录 · 我的空间' : '个人门户 · 我的应用'
 </script>
 <template><AuthGate v-if="requiresAccount"><Page v-if="!callback" /></AuthGate><Page v-else /></template>
