@@ -139,5 +139,8 @@ export async function checkMobileLayouts({page,origin,pass,ensure,reportDir}){
   await page.goto(origin+'/ledger/?__sso=1',{waitUntil:'domcontentloaded'})
   await page.locator('.ledger-app .loading-state').waitFor({state:'hidden',timeout:35000})
   await page.locator('.home-dashboard').waitFor({timeout:35000})
+  // The overview paints before bootstrap finishes its book request. Wait after
+  // the workspace exists so the next SSO reload does not interrupt that request.
+  await page.locator('.ledger-app .loading-state').waitFor({state:'hidden',timeout:35000})
   if(reportDir){mkdirSync(reportDir,{recursive:true});writeFileSync(resolve(reportDir,'mobile-layout-results.json'),JSON.stringify({engine:'WebKit',appleDevice:false,results},null,2))}
 }
