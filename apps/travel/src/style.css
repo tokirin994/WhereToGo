@@ -5,7 +5,7 @@
   --panel: #fff; --background: #f5f6f3; --accent: #346e53; --accent-strong: #285a42;
 }
 * { box-sizing: border-box; }
-body { min-width: 360px; min-height: 100vh; margin: 0; }
+body { min-width: 320px; min-height: 100vh; margin: 0; }
 button, input, select { font: inherit; }
 button { color: inherit; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #8fb89a; outline-offset: 2px; }
@@ -308,7 +308,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .main-nav { gap: 14px; } .nav-link { font-size: 11px; } .brand { min-width: 150px; }
 }
 @media (max-width: 720px) {
-  body { min-width: 360px; }
+  body { min-width: 320px; }
   .topbar { height: 58px; padding: 0 13px; gap: 8px; }
   .brand { min-width: 0; gap: 7px; } .brand-mark { width: 30px; height: 30px; border-radius: 9px; } .brand-name { font-size: 15px; }
   .main-nav { position: fixed; z-index: 12; left: 10px; right: 10px; bottom: 9px; height: 52px; justify-content: space-around; gap: 0; padding: 0 5px; background: #fffefdf2; border: 1px solid #e5eae4; border-radius: 13px; box-shadow: 0 6px 24px #263c2e19; backdrop-filter: blur(12px); }

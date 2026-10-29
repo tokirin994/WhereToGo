@@ -141,7 +141,13 @@ try{
     writeFileSync(resolve(WTG_BROWSER_REPORT_DIR,'sync-fixture.json'),JSON.stringify(syncFixture,null,2))
     pass('automatic snapshot PUT and server read-back succeed on the isolated empty test account')
   }else{
-  await ledgerReady(page);await page.reload()
+  await ledgerReady(page)
+  if(args.includes('--responsive')){
+    if(WTG_BROWSER_REPORT_DIR)mkdirSync(WTG_BROWSER_REPORT_DIR,{recursive:true})
+    const {checkMobileLayouts}=await import('./mobile-layout-checks.mjs')
+    stage='responsive layouts';await checkMobileLayouts({page,origin,pass,ensure,reportDir:WTG_BROWSER_REPORT_DIR})
+  }
+  await page.reload()
   await ledgerReady(page)
   pass('ledger opens and reloads without another login')
   if(testRejection){
@@ -183,6 +189,12 @@ try{
   if(WTG_BROWSER_REPORT_DIR)writeFileSync(resolve(WTG_BROWSER_REPORT_DIR,`result-${mobile?'mobile':'desktop'}-${legacy?'fallback':'modern'}.json`),JSON.stringify({engine:'WebKit',appleDevice:false,candidateBundle:!!bundle,legacy,mobile,checks,passwordForms,runtimeErrors,syncFixture},null,2))
 }catch(error){
   console.error('FAIL WebKit stage: '+stage)
-  if(WTG_BROWSER_REPORT_DIR){mkdirSync(WTG_BROWSER_REPORT_DIR,{recursive:true});writeFileSync(resolve(WTG_BROWSER_REPORT_DIR,'failure.json'),JSON.stringify({stage,message:error.message,runtimeErrors},null,2))}
+  if(WTG_BROWSER_REPORT_DIR){
+    mkdirSync(WTG_BROWSER_REPORT_DIR,{recursive:true})
+    const location=await page.evaluate(()=>window.location.origin+window.location.pathname).catch(()=>null)
+    const notices=await page.locator('#input-error,.kc-feedback-text,.alert-error').allTextContents().catch(()=>[])
+    writeFileSync(resolve(WTG_BROWSER_REPORT_DIR,'failure.json'),JSON.stringify({stage,message:error.message,location,notices,runtimeErrors},null,2))
+    await page.screenshot({path:resolve(WTG_BROWSER_REPORT_DIR,'failure.png')}).catch(()=>{})
+  }
   process.exitCode=1
 }finally{await context.close();await browser.close()}

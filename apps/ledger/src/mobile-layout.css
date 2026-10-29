@@ -1,0 +1,18 @@
+/* A title and four touch targets must wrap as groups on a phone. */
+.ledger-app .ledger-topbar>div:first-child{min-width:0;flex:1 1 150px;}
+.ledger-app .ledger-topbar>div:first-child>small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ledger-app .ledger-topbar h1{white-space:nowrap;}
+.ledger-app .top-actions{flex:none;}
+@media(max-width:650px){
+  .ledger-app .ledger-topbar{height:auto;min-height:78px;flex-wrap:wrap;gap:12px;padding:16px 0;}
+  .ledger-app .top-actions{flex:1 1 auto;justify-content:flex-end;gap:8px;}
+  .ledger-app .top-actions>.icon-button,.ledger-app .top-actions .ledger-app-switcher summary{display:flex;align-items:center;justify-content:center;width:44px;min-width:44px;height:44px;min-height:44px;padding:10px;border-radius:12px;}
+  .ledger-app .top-actions>.icon-button>span,.ledger-app .top-actions .ledger-app-switcher summary>span{display:none;}
+  .ledger-app .top-actions>.primary-button{min-height:44px;white-space:nowrap;padding:10px 14px;font-size:13px;}
+  .ledger-app .ledger-topbar>div:first-child>small{font-size:9px;letter-spacing:1px;}
+  .ledger-app .ledger-topbar h1{margin-top:5px;font-size:21px;}
+  .ledger-app .home-period-bar{flex-wrap:wrap;}
+  .ledger-app .home-period-actions{flex-wrap:wrap;}
+  .ledger-app .modal-card,.ledger-app .calendar-modal{max-width:100%;min-width:0;}
+  .ledger-app .modal-shade{padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(12px,env(safe-area-inset-bottom));}
+}

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import CategoryIcon from './CategoryIcon.vue'
+import {useAnchoredPopover} from '@personal/platform/popover'
 import type { Category, FlowType } from './ledger'
 
 const props = defineProps<{ categories: Category[]; flowType: FlowType }>()
@@ -16,6 +17,14 @@ const search = ref('')
 const sorting = ref(false)
 const expanded = ref(new Set<string>())
 const activeMenuId = ref<string | null>(null)
+const root=ref<HTMLElement|null>(null),activeAnchor=ref<HTMLElement|null>(null),activePanel=ref<HTMLElement|null>(null)
+const {style:menuStyle,position:positionMenu}=useAnchoredPopover(activeAnchor,activePanel,computed(()=>activeMenuId.value!==null))
+watch(activeMenuId,async()=>{
+  await nextTick()
+  activeAnchor.value=root.value?.querySelector<HTMLElement>('.cm-menu-toggle[aria-expanded=true]')?.parentElement||null
+  activePanel.value=root.value?.querySelector<HTMLElement>('.cm-action-menu')||null
+  positionMenu()
+})
 const draggingId = ref<string | null>(null)
 const dropTarget = ref<{ id: string; after: boolean } | null>(null)
 const announcement = ref('')
@@ -168,7 +177,7 @@ function moveWithKeyboard(category: Category, direction: -1 | 1) {
 </script>
 
 <template>
-  <section class="category-manager" :class="{'is-sorting':sorting}">
+  <section ref="root" class="category-manager" :class="{'is-sorting':sorting}">
     <header class="cm-header">
       <button class="cm-back" type="button" @click="emit('back')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>更多</button>
       <div class="cm-header-actions">
@@ -194,7 +203,7 @@ function moveWithKeyboard(category: Category, direction: -1 | 1) {
           </button>
           <button v-if="sorting" class="cm-reorder-handle" type="button" :aria-label="`拖动调整${row.category.name}顺序，也可按上下方向键移动`" @pointerdown="startDrag(row.category,$event)" @pointermove="moveDrag" @pointerup="finishDrag" @pointercancel="cancelDrag" @lostpointercapture="cancelDrag" @keydown.up.prevent="moveWithKeyboard(row.category,-1)" @keydown.down.prevent="moveWithKeyboard(row.category,1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14"/></svg></button>
           <div v-else data-category-menu class="cm-menu-anchor"><button type="button" class="cm-menu-toggle" :aria-label="`${row.category.name}的更多操作`" :aria-expanded="activeMenuId===row.category.id" aria-haspopup="menu" @click="activeMenuId=activeMenuId===row.category.id?null:row.category.id"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg></button>
-            <div v-if="activeMenuId===row.category.id" class="cm-action-menu" role="menu"><button type="button" role="menuitem" @click="act('edit',row.category)">编辑分类</button><button type="button" role="menuitem" @click="act('create',row.category)">添加子分类</button><button type="button" role="menuitem" class="cm-delete" @click="act('delete',row.category)">删除分类</button></div>
+            <div v-if="activeMenuId===row.category.id" class="cm-action-menu" :style="menuStyle" role="menu"><button type="button" role="menuitem" @click="act('edit',row.category)">编辑分类</button><button type="button" role="menuitem" @click="act('create',row.category)">添加子分类</button><button type="button" role="menuitem" class="cm-delete" @click="act('delete',row.category)">删除分类</button></div>
           </div>
         </article>
       </div>
@@ -256,7 +265,7 @@ svg { display:block;width:19px;height:19px;fill:none;stroke:currentColor;stroke-
 .cm-menu-toggle,.cm-reorder-handle { display:grid;place-items:center;width:36px;height:36px;padding:7px;border:0;border-radius:10px;background:transparent;color:var(--cm-muted); }
 .cm-menu-toggle svg { width:20px;height:20px;fill:currentColor;stroke:none; }
 .cm-menu-toggle:hover,.cm-menu-toggle[aria-expanded=true] { background:var(--cm-soft);color:var(--cm-ink); }
-.cm-action-menu { position:absolute;z-index:6;right:0;top:calc(100% + 6px);display:grid;min-width:148px;padding:5px;border:1px solid var(--cm-line);border-radius:13px;background:var(--cm-paper);box-shadow:var(--cm-shadow); }
+.cm-action-menu { position:absolute;z-index:6;right:0;top:calc(100% + 6px);display:grid;min-width:148px;max-width:calc(100vw - 24px);overflow:auto;overscroll-behavior:contain;padding:5px;border:1px solid var(--cm-line);border-radius:13px;background:var(--cm-paper);box-shadow:var(--cm-shadow); }
 .cm-action-menu button { min-height:38px;padding:9px 12px;border:0;border-radius:8px;background:transparent;color:var(--cm-ink);font-size:12px;text-align:left;white-space:nowrap; }
 .cm-action-menu button:hover { background:var(--cm-soft); }
 .cm-action-menu .cm-delete { margin-top:3px;border-top:1px solid var(--cm-line);border-radius:0 0 8px 8px;color:#d56860; }
