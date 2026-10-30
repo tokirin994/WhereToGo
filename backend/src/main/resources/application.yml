@@ -50,6 +50,9 @@ management:
         include: health,info
 
 travel:
+  rednote:
+    connector-url: ${TRAVEL_REDNOTE_CONNECTOR_URL:}
+    connector-key: ${TRAVEL_REDNOTE_CONNECTOR_KEY:}
   geocoder:
     provider: ${TRAVEL_GEOCODER_PROVIDER:photon}
     url: ${TRAVEL_GEOCODER_URL:https://photon.komoot.io/api/}

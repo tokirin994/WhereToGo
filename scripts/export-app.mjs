@@ -7,7 +7,7 @@ const root=resolve(import.meta.dirname,'..'),output=resolve(destination)
 if(existsSync(output))throw new Error('Use a new export directory; existing files are never overwritten')
 if(!relative(root,output)||(!isAbsolute(relative(root,output))&&!relative(root,output).startsWith('..')&&!relative(root,output).startsWith('.local')))throw new Error('Export outside the repo or into .local only')
 mkdirSync(output,{recursive:true})
-const excluded=new Set(['node_modules','dist','target','.local','.git','coverage','pdfjs'])
+const excluded=new Set(['node_modules','dist','target','.local','.git','coverage','pdfjs','reader'])
 const filter=source=>{const name=source.split(/[\\/]/).at(-1);return !excluded.has(name)&&(!name.startsWith('.env')||name==='.env.example')&&!/\.(?:clixml|pem|key|age|dump|log|tsbuildinfo)$/.test(name)}
 cpSync(resolve(root,'apps',app),resolve(output,'apps',app),{recursive:true,filter})
 cpSync(resolve(root,'packages'),resolve(output,'packages'),{recursive:true,filter})

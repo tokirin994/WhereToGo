@@ -12,6 +12,7 @@ TravelAtlas is a map-first place library and trip planner. It includes persisten
 - Plan by day, add a saved place as an itinerary stop, set its time and duration, add notes, reorder or remove stops, and export a printable HTML itinerary.
 - Open the selected trip's independent SmartLedger book through a trip-context handoff without putting access tokens in URLs; SmartLedger performs the API request using its own authenticated session.
 - Named place collections, cloud-backed favorites and visited flags, editable notes and HTTPS source links; new accounts start empty.
+- Reviewable travel-material imports (PDF, DOCX, text and local image OCR), optional AI extraction, and independent hiking/cycling/citywalk/driving route collections. See [material import and route design](docs/travel-materials-and-route-library.md) for the Xiaohongshu connector requirements, limits, data model and interactions.
 - Day-by-day drag/button reordering, completion, schedule overlap warnings, planned costs, preparation checklist and date shifting; duplicate trips, printable HTML, portable JSON import/export and local-time ICS export.
 - Reviewable saved-place drafts, pluggable Chat Completions / Responses / Anthropic AI adapters, Photon name search, Open-Meteo weather and OSRM driving/walking routes.
 - Java 8 Spring Boot API with health, place CRUD/map-window, and trip/itinerary endpoints.
