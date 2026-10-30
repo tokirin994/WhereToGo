@@ -53,9 +53,9 @@ async function recognize(canvas:HTMLCanvasElement,progress:(message:string)=>voi
   const {createWorker,PSM}=await import('tesseract.js')
   let rejectFailure:(error:Error)=>void=()=>{},expired=false
   const failed=new Promise<never>((_,reject)=>{rejectFailure=reject})
-  const pending=createWorker('chi_sim+eng',1,{workerPath:base+'reader/ocr/worker.min.js',corePath:base+'reader/ocr',langPath:base+'reader/ocr/lang',cacheMethod:'none',errorHandler:()=>rejectFailure(new Error('本地 OCR 引擎或语言模型加载失败，请检查网络后重试，或粘贴原文')),logger:event=>progress(event.status==='recognizing text'?`识别图片文字 ${Math.round((event.progress||0)*100)}%`:'准备本地中英文识别引擎…')})
+  const pending=createWorker('chi_sim+eng',1,{workerPath:base+'reader/ocr/worker.min.js',corePath:base+'reader/ocr',langPath:base+'reader/ocr/lang',cacheMethod:'none',errorHandler:()=>rejectFailure(new Error('本地 OCR 引擎或语言模型加载失败，请检查网络后重试，或粘贴原文')),logger:event=>progress(event.status==='recognizing text'?`识别图片文字 ${Math.round((event.progress||0)*100)}%`:event.status==='loading language traineddata'?`下载中英文字库 ${Math.round((event.progress||0)*100)}%（首次加载较慢）`:'准备本地识别引擎（首次需要下载识别资源）…')})
   void pending.then(worker=>{if(expired)void worker.terminate()},()=>{})
-  const timer=setTimeout(()=>rejectFailure(new Error('本地 OCR 引擎加载超时，请换用较小截图或粘贴原文')),90000)
+  const timer=setTimeout(()=>rejectFailure(new Error('本地 OCR 引擎下载超时。首次需要下载识别资源，请检查网络后重试，或粘贴原文')),240000)
   let worker:Awaited<ReturnType<typeof createWorker>>
   try{worker=await Promise.race([pending,failed])}catch(error){expired=true;throw error}finally{clearTimeout(timer)}
   try{await worker.setParameters({tessedit_pageseg_mode:PSM.AUTO,preserve_interword_spaces:'1'});const result=await worker.recognize(canvas);return result.data.text.replace(/([\u3400-\u9fff]) +(?=[\u3400-\u9fff])/g,'$1')}

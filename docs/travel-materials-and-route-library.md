@@ -172,6 +172,7 @@ Content-Type: application/json
 - 无运行时第三方 CDN。旅行应用独立部署也携带自己的 reader 目录。
 - `public/reader/` 是生成产物，已忽略；需连同构建后的 `dist/travel/reader/` 一起部署。只更新 JS/CSS 会导致 PDF/OCR 失败。
 - 每次最多 5 文件、单文件 15 MB、PDF 20 页（其中最多 8 页扫描 OCR）、合计 30000 字；逐页处理并回收画布/worker，避免手机同时解码大量页面。
+- 首次识图需要下载引擎和中英文字库，显示加载/字库进度，初始化最多等待 4 分钟；后续可复用浏览器 HTTP 缓存。下载失败保留文件与可见错误，不自动保存或反复重试。
 - 更新 Java 8 Travel API 后 Flyway 执行 V8 增量迁移；先执行现有加密数据库备份，再构建/更新 travel-api 和旅游静态文件。门户、记账和登录服务无需数据库迁移。
 - VPS 使用迁移账号与运行账号分离，迁移成功后运行 `bash deploy/vps/grant-travel-library.sh`（或将脚本上传 VPS 执行），只给 `travel_app` 授予新路线表的读写权限，不放开迁移元数据和凭据表。
 - 页面和文件错误必须有可见反馈，不能把浏览器本地失败当成账号过期。
