@@ -11,7 +11,7 @@ import {useTripsStore} from '../stores/trips'
 import type {TripRecord} from '../api/trips'
 import type {Place} from '../stores/places'
 const props=defineProps<{routes:SavedRoute[];places:Place[];loadError:string}>()
-const emit=defineEmits<{changed:[];import:[];openTrip:[trip:TripRecord];openPlaces:[];reload:[]}>()
+const emit=defineEmits<{changed:[];import:[];openTrip:[trip:TripRecord,date:string];openPlaces:[];reload:[]}>()
 const trips=useTripsStore(),query=ref(''),filter=ref('all'),selection=ref(''),editor=ref<SavedRouteInput|null>(null),editingId=ref<string>(),busy=ref(false),error=ref(''),applyOpen=ref(false),deleteOpen=ref(false),tripId=ref(''),date=ref(''),startsAt=ref('09:00'),minutes=ref(30)
 const selected=computed(()=>props.routes.find(r=>r.id===selection.value)||null)
 const list=computed(()=>props.routes.filter(r=>(filter.value==='all'||r.mode===filter.value||(filter.value==='favorites'&&r.favorite))&&`${r.name} ${r.city} ${r.tags.join(' ')} ${r.waypoints.map(p=>p.name).join(' ')}`.toLowerCase().includes(query.value.toLowerCase().trim())))
@@ -25,7 +25,7 @@ async function toggle(key:'favorite'|'completed'){if(!selected.value||busy.value
 async function destroy(){if(!selected.value||busy.value)return;busy.value=true;error.value='';try{await removeRoute(selected.value.id);selection.value='';deleteOpen.value=false;emit('changed')}catch(cause){error.value=cause instanceof Error?cause.message:'删除失败'}finally{busy.value=false}}
 function startApply(){error.value='';tripId.value='';date.value='';applyOpen.value=true}
 function chooseTrip(){date.value=dates.value[0]||''}
-async function apply(){if(!selected.value||busy.value||!tripId.value||!date.value)return;busy.value=true;error.value='';try{const trip=await apiRequest<TripRecord>('/api/v1/library/routes/'+selected.value.id+'/apply',{method:'POST',body:JSON.stringify({tripId:tripId.value,date:date.value,startsAt:startsAt.value,minutesPerStop:minutes.value})});const index=trips.trips.findIndex(t=>t.id===trip.id);if(index>=0)trips.trips[index]=trip;trips.persist();applyOpen.value=false;emit('openTrip',trip)}catch(cause){error.value=cause instanceof Error?cause.message:'添加失败'}finally{busy.value=false}}
+async function apply(){if(!selected.value||busy.value||!tripId.value||!date.value)return;busy.value=true;error.value='';try{const trip=await apiRequest<TripRecord>('/api/v1/library/routes/'+selected.value.id+'/apply',{method:'POST',body:JSON.stringify({tripId:tripId.value,date:date.value,startsAt:startsAt.value,minutesPerStop:minutes.value})});const index=trips.trips.findIndex(t=>t.id===trip.id);if(index>=0)trips.trips[index]=trip;trips.persist();applyOpen.value=false;emit('openTrip',trip,date.value)}catch(cause){error.value=cause instanceof Error?cause.message:'添加失败'}finally{busy.value=false}}
 function exportSelected(){if(selected.value)download(selected.value.name+'-路线.json',JSON.stringify({type:'wheretogo.route',version:1,route:routeInput(selected.value)},null,2),'application/json')}
 </script>
 <template>

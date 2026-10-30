@@ -25,11 +25,11 @@ class RouteValidationTest {
     @Test void directRouteInvalidDistanceReturnsBadRequest()throws Exception{
         mvc().perform(post("/api/v1/library/routes").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"sample\",\"city\":\"sample\",\"distanceKm\":0,\"waypoints\":[{\"name\":\"A\"},{\"name\":\"B\"}]}")).andExpect(status().isBadRequest());
     }
-    @Test void rednoteWhitelistRequiresHttpsExactHostAndNoCredentials(){
+    @Test void rednoteWhitelistRequiresHttpsExactHostAndNoCredentials()throws Exception{
         assertTrue(MaterialController.validLink("https://www.xiaohongshu.com/explore/sample"));
         assertTrue(MaterialController.validLink("https://xhslink.com/a/sample"));
         assertFalse(MaterialController.validLink("https://www.xiaohongshu.com.attacker.example/explore/sample"));
-        assertFalse(MaterialController.validLink("https://user:password@www.xiaohongshu.com/explore/sample"));
+        assertFalse(MaterialController.validLink(new java.net.URI("https","fixture-user","www.xiaohongshu.com",-1,"/explore/sample",null,null).toASCIIString()));
         assertFalse(MaterialController.validLink("http://www.xiaohongshu.com/explore/sample"));
         assertFalse(MaterialController.validLink("https://127.0.0.1/private"));
     }

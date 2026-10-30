@@ -165,6 +165,8 @@ Content-Type: application/json
 
 ## 6. 前端资源和部署
 
+浏览器阅读器按 [PDF.js 官方示例](https://mozilla.github.io/pdf.js/examples/) 的文档/分页接口接入；图片识别按 [Tesseract.js 官方 API](https://github.com/naptha/tesseract.js/blob/master/docs/api.md) 使用独立 worker，并随应用提供语言模型和兼容不同 SIMD 能力的 WASM 文件。实际依赖版本以锁文件为准。
+
 - 功能代码位于 `apps/travel/src/travel/`，不引用记账应用的业务代码。
 - `predev/prebuild` 运行 `prepare-reader-assets.mjs`：从锁定的 npm 依赖准备 PDF worker/字体/CMap/WASM、OCR worker/WASM/中英文模型到 `public/reader/`。
 - 无运行时第三方 CDN。旅行应用独立部署也携带自己的 reader 目录。

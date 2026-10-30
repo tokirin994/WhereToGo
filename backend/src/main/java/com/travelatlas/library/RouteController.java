@@ -37,8 +37,11 @@ public class RouteController {
         UUID owner=user.id();
         List<String> rows=jdbc.queryForList("SELECT payload::text FROM travel_routes WHERE id=? AND user_id=? AND deleted_at IS NULL",String.class,id,owner);if(rows.isEmpty())throw missing();
         RouteInput route;try{route=json.readValue(rows.get(0),RouteInput.class);}catch(Exception e){throw new IllegalStateException("Invalid stored route",e);}
-        if(jdbc.queryForList("SELECT id FROM trips WHERE id=? AND user_id=? AND deleted_at IS NULL FOR UPDATE",UUID.class,input.tripId,owner).isEmpty())throw new ResponseStatusException(HttpStatus.NOT_FOUND,"旅行不存在");
-        TripDto trip=trips.find(input.tripId);if(trip.getStartsOn()==null||trip.getEndsOn()==null||input.date.isBefore(trip.getStartsOn())||input.date.isAfter(trip.getEndsOn()))throw bad("请选择旅行日期范围内的一天");
+        // Do not read through MyBatis before JDBC writes: its transaction-local cache
+        // would otherwise return the pre-append stop list at the end of this method.
+        List<LocalDate[]> dates=jdbc.query("SELECT starts_on,ends_on FROM trips WHERE id=? AND user_id=? AND deleted_at IS NULL FOR UPDATE",(rs,i)->new LocalDate[]{rs.getDate("starts_on")==null?null:rs.getDate("starts_on").toLocalDate(),rs.getDate("ends_on")==null?null:rs.getDate("ends_on").toLocalDate()},input.tripId,owner);
+        if(dates.isEmpty())throw new ResponseStatusException(HttpStatus.NOT_FOUND,"旅行不存在");
+        LocalDate[] range=dates.get(0);if(range[0]==null||range[1]==null||input.date.isBefore(range[0])||input.date.isAfter(range[1]))throw bad("请选择旅行日期范围内的一天");
         Integer count=jdbc.queryForObject("SELECT count(*) FROM trip_stops WHERE trip_id=?",Integer.class,input.tripId);
         Integer maximum=jdbc.queryForObject("SELECT COALESCE(max(sort_order),-1) FROM trip_stops WHERE trip_id=?",Integer.class,input.tripId);
         if(count+route.waypoints.size()>300||maximum+route.waypoints.size()>299)throw bad("追加后超过单趟旅行 300 项安排限制");
