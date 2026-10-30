@@ -23,10 +23,19 @@ public class RouteInput {
     @NotNull @Valid @Size(min=2,max=80) public List<@NotNull @Valid Waypoint> waypoints=new ArrayList<>();
     public boolean favorite=false;
     public boolean completed=false;
+    // Spring's validation error binding traverses JavaBean accessors for nested paths.
+    public String getName(){return name;} public String getCity(){return city;}
+    public String getMode(){return mode;} public String getShape(){return shape;} public String getDifficulty(){return difficulty;}
+    public Double getDistanceKm(){return distanceKm;} public Integer getDurationMinutes(){return durationMinutes;} public Integer getAscentM(){return ascentM;}
+    public String getDescription(){return description;} public String getTips(){return tips;}
+    public String getSourceUrl(){return sourceUrl;} public String getSourceLabel(){return sourceLabel;} public String getEvidence(){return evidence;}
+    public List<String> getTags(){return tags;} public List<Waypoint> getWaypoints(){return waypoints;}
+    public boolean isFavorite(){return favorite;} public boolean isCompleted(){return completed;}
     @AssertTrue(message="来源链接必须是无内嵌账号密码的 HTTPS 地址")
     public boolean isSourceValid(){if(sourceUrl==null||sourceUrl.isEmpty())return true;try{java.net.URI uri=java.net.URI.create(sourceUrl);return "https".equals(uri.getScheme())&&uri.getHost()!=null&&uri.getUserInfo()==null;}catch(Exception e){return false;}}
     public static class Waypoint {
         @NotBlank @Size(max=180) public String name;
         @NotNull @Size(max=300) public String note="";
+        public String getName(){return name;} public String getNote(){return note;}
     }
 }

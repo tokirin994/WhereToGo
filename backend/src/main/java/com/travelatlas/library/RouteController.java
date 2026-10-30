@@ -63,12 +63,14 @@ public class RouteController {
     public static class ImportInput {
         @NotNull @Size(max=80) public List<@NotNull @Valid PlaceRequest> places=new ArrayList<>();
         @NotNull @Size(max=20) public List<@NotNull @Valid RouteInput> routes=new ArrayList<>();
+        public List<PlaceRequest> getPlaces(){return places;} public List<RouteInput> getRoutes(){return routes;}
     }
     public static class ApplyInput {
         @NotNull public UUID tripId;
         @NotNull public LocalDate date;
         @NotNull @Pattern(regexp="([01][0-9]|2[0-3]):[0-5][0-9]") public String startsAt;
         @NotNull @Min(1) @Max(480) public Integer minutesPerStop;
+        public UUID getTripId(){return tripId;} public LocalDate getDate(){return date;} public String getStartsAt(){return startsAt;} public Integer getMinutesPerStop(){return minutesPerStop;}
     }
     private ResponseStatusException missing(){return new ResponseStatusException(HttpStatus.NOT_FOUND,"路线不存在或已删除");}
     private ResponseStatusException bad(String message){return new ResponseStatusException(HttpStatus.BAD_REQUEST,message);}

@@ -67,6 +67,7 @@ public class MaterialController {
     public static class Input {
         @NotBlank @Size(max=30000) public String text;
         @NotNull @Size(max=120) public String city="";
+        public String getText(){return text;} public String getCity(){return city;}
     }
-    public static class LinkInput {@NotBlank @Size(max=1500) public String url;}
+    public static class LinkInput {@NotBlank @Size(max=1500) public String url;public String getUrl(){return url;}}
 }
