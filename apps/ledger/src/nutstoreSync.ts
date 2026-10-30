@@ -1,7 +1,7 @@
 import type { LedgerSnapshot } from './ledger'
 import { authorizedRequest, apiError } from './apiClient'
 export interface NutstoreCredentials {username:string;appPassword:string}
-export interface NutstoreStatus {available:boolean;configured:boolean;needsUpdate?:boolean;usernameMasked?:string;updatedAt?:string}
+export interface NutstoreStatus {available:boolean;configured:boolean;needsUpdate?:boolean;usernameMasked?:string;updatedAt?:string;backupPath?:string}
 const settingsKey=(accountKey:string)=>`smartledger-nutstore:${accountKey}`
 /** Legacy values are read into memory solely for migration; new writes never use Web Storage. */
 export function readNutstoreCredentials(accountKey:string):NutstoreCredentials{

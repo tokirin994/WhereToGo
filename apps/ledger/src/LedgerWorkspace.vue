@@ -591,9 +591,11 @@ watch(()=>[snapshot.value.settings.cloudSyncEnabled,snapshot.value.settings.midn
             <label class="nutstore-field"><span>坚果云账号</span><input v-model.trim="nutstoreCredentials.username" type="email" autocomplete="off" :placeholder="nutstoreStatus.configured?'更换配置时填写完整邮箱':'name@example.com'"/></label>
             <label class="nutstore-field"><span>第三方应用密码</span><input v-model="nutstoreCredentials.appPassword" type="password" autocomplete="new-password" :placeholder="nutstoreStatus.configured?'已保存，留空继续使用；更新时重新填写':'坚果云生成的应用密码'"/></label>
             <p class="nutstore-endpoint">WebDAV 地址 <code>https://dav.jianguoyun.com/dav/</code></p>
+            <p v-if="nutstoreStatus.backupPath" class="nutstore-endpoint">当前账号备份文件 <code style="overflow-wrap:anywhere;user-select:all">{{ nutstoreStatus.backupPath }}</code></p>
+            <p class="nutstore-message">支持网页版和原 App v2 快照，恢复时自动转换分类与账本关联；覆盖前的旧文件保存在 SmartLedger/history/。</p>
             <div class="settings-actions"><button class="secondary-button" :disabled="busy" @click="saveNutstoreOnly">加密保存配置</button><button class="secondary-button" :disabled="busy" @click="testNutstoreConnection">测试连接并保存</button><button class="primary-button" :disabled="busy" @click="backupNutstore">立即备份</button><button class="secondary-button" :disabled="busy" @click="restoreNutstore">从坚果云恢复</button><button class="text-button" :disabled="busy" @click="removeNutstoreConfig">清除配置</button></div>
             <p v-if="nutstoreMessage" class="nutstore-message" role="status">{{ nutstoreMessage }}</p>
-            <small class="privacy-note">应用密码仅保留在当前标签页会话中，退出账号会清除；不会进入账本快照。API 不保存应用密码，请使用可单独撤销的第三方应用密码。恢复操作会替换本机账本。</small>
+            <small class="privacy-note">账号与应用密码由服务器 AES-256-GCM 加密保存，浏览器不保存或回显密码，凭证不会进入账本快照。JSON 备份文件本身未加密。恢复操作会替换本机账本，请先保留本机备份。</small>
           </section>
           <section class="settings-card"><header><span class="settings-icon">✦</span><div><h3>本地数据</h3><small>演示数据只写入当前浏览器账本，可手动删除</small></div></header><div class="settings-actions"><button class="secondary-button" @click="generateDemo">生成模拟数据</button><span class="local-data-count">本机保存 {{ snapshot.transactions.length }} 笔流水 · {{ snapshot.books.length }} 本账</span></div></section>
         </div>

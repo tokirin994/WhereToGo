@@ -11,10 +11,11 @@ import org.springframework.web.bind.annotation.*;
 public class CredentialController {
     private final CredentialVault vault;
     public CredentialController(CredentialVault vault) { this.vault = vault; }
-    @GetMapping public Map<String,Object> status(@AuthenticationPrincipal Jwt jwt) { return vault.status(jwt); }
+    private Map<String,Object> statusWithPath(Jwt jwt){Map<String,Object> result=vault.status(jwt);result.put("backupPath",NutstoreSyncController.relativeSnapshotPath(jwt));return result;}
+    @GetMapping public Map<String,Object> status(@AuthenticationPrincipal Jwt jwt) { return statusWithPath(jwt); }
     @PutMapping public Map<String,Object> save(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody NutstoreSyncController.Credentials credentials) {
         credentials.setUsername(credentials.getUsername().trim());
-        vault.save(jwt, credentials); return vault.status(jwt);
+        vault.save(jwt, credentials); return statusWithPath(jwt);
     }
-    @DeleteMapping public Map<String,Object> delete(@AuthenticationPrincipal Jwt jwt) { vault.delete(jwt); return vault.status(jwt); }
+    @DeleteMapping public Map<String,Object> delete(@AuthenticationPrincipal Jwt jwt) { vault.delete(jwt); return statusWithPath(jwt); }
 }

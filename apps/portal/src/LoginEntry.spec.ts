@@ -2,10 +2,14 @@ import {flushPromises,mount} from '@vue/test-utils'
 import {beforeEach,describe,expect,it,vi} from 'vitest'
 import {ref} from 'vue'
 import LoginEntry from './LoginEntry.vue'
-import {initializeAuth,signIn,register} from './auth'
+import {initializeAuth,signIn,register,authError} from './auth'
 vi.mock('./auth',()=>({currentUser:ref(null),authAction:ref(null),authError:ref(''),initializeAuth:vi.fn(),signIn:vi.fn(),register:vi.fn()}))
-beforeEach(()=>{vi.clearAllMocks();history.replaceState({},'','/login/?app=travel&returnTo=%2F%3Ftrip%3Dabc')})
+beforeEach(()=>{vi.clearAllMocks();authError.value='';history.replaceState({},'','/login/?app=travel&returnTo=%2F%3Ftrip%3Dabc')})
 describe('portal central login entry',()=>{
+  it('uses first-party login when an iframe could not restore the portal session',async()=>{
+    authError.value='iframe blocked';const view=mount(LoginEntry);await flushPromises()
+    expect(signIn).toHaveBeenCalledExactlyOnceWith(location.pathname+location.search);view.unmount()
+  })
   it('starts login with the registered application return point in OIDC state',async()=>{
     const view=mount(LoginEntry);await flushPromises()
     expect(signIn).toHaveBeenCalledExactlyOnceWith(location.pathname+location.search)

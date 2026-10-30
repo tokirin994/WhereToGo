@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {asyncPage} from '@personal/platform/async-page'
+import AccountWelcome from '@personal/identity/AccountWelcome.vue'
 import type { User } from 'oidc-client-ts'
 import { createIdentitySession } from './identitySession'
 const LedgerWorkspace=asyncPage(()=>import('./LedgerWorkspace.vue'),'日常记账')
@@ -16,6 +17,7 @@ const localMockAuth = import.meta.env.VITE_LOCAL_MOCK_AUTH === 'true'
 const user = ref<User | null>(null)
 const error = ref('')
 const loading = ref(true)
+const redirecting=ref(false)
 const authAction=ref<'login'|'register'|null>(null)
 const connectionIssue=ref<ApiSessionIssue|null>(null),reconnecting=ref(false)
 function apiSessionIssue(event:Event){connectionIssue.value=(event as CustomEvent<ApiSessionIssue>).detail}
@@ -80,13 +82,18 @@ onMounted(async () => {
       window.history.replaceState({}, document.title, window.location.pathname)
     } else {
       setSessionTokenProvider(force=>identity.accessToken(force))
-      try{await identity.initialize()}catch(cause){if(!travelHandoff.has('__sso')||identityCallback)throw cause}
+      try{await identity.initialize()}catch(cause){if(identityCallback||ledgerOnly&&!travelHandoff.has('__sso'))throw cause}
       if(identityCallback)return
       if(travelHandoff.has('__sso')){
         travelHandoff.delete('__sso')
         const target=window.location.pathname+(travelHandoff.toString()?'?'+travelHandoff.toString():'')+window.location.hash
         window.history.replaceState({},'',target)
-        if(!user.value){await identity.resumeSSO(target);return}
+        if(!user.value){redirecting.value=true;await identity.resumeSSO(target);return}
+      }
+      if(!user.value&&!ledgerOnly&&!travelHandoff.has('signedOut')){
+        redirecting.value=true
+        window.location.replace(platform.loginUrl('ledger',window.location.pathname+window.location.search+window.location.hash))
+        return
       }
       if(appRoutePath().startsWith('/auth/'))return
     }
@@ -110,6 +117,7 @@ onMounted(async () => {
       window.location.replace(target.toString())
     }
   } catch (cause) {
+    redirecting.value=false
     error.value = cause instanceof Error ? cause.message : '初始化登录状态失败。'
   } finally { loading.value = false }
 })
@@ -117,12 +125,13 @@ onUnmounted(()=>{identity.dispose();setSessionTokenProvider();window.removeEvent
 </script>
 
 <template>
-  <main v-if="identityCallback&&!error" class="auth-screen"><div class="auth-card"><div class="auth-mark">🐟</div><h1>正在完成统一登录</h1><p role="status">验证账号后将自动打开记账。</p></div></main>
+  <AccountWelcome v-if="identityCallback&&!error" :portal-url="portalUrl" app-name="日常记账" :show-portal="!ledgerOnly" :loading="true"/>
   <template v-else-if="!identityCallback&&user && apiUrl">
     <aside v-if="error||connectionIssue" class="ledger-connection-notice" role="alert" :aria-busy="reconnecting"><div><b>{{ connectionIssue?'记账服务连接需要重试':'暂时无法完成这次操作' }}</b><p>{{ error||(connectionIssue?'记账接口未接受当前凭证，尚未完成的操作没有自动重发。可以重新连接；当前账号与本地账本会保留。':'') }}</p><details v-if="connectionIssue"><summary>查看连接诊断</summary><small>HTTP {{ connectionIssue.status }} · {{ connectionIssue.method }} {{ connectionIssue.route }}<template v-if="connectionIssue.requestId"> · 请求编号 {{ connectionIssue.requestId }}</template></small></details></div><button type="button" :disabled="reconnecting" @click="reconnectSession">{{ reconnecting?'连接中…':'重新连接' }}</button><button type="button" aria-label="关闭连接提示" @click="error='';connectionIssue=null">×</button></aside>
     <LedgerWorkspace :key="accountKey" :user="user" :api-url="apiUrl" :account-key="accountKey" :book-id="bookId" />
   </template>
-  <main v-else class="auth-screen"><div v-if="loading" class="auth-card"><div class="auth-mark">🐟</div><h1>正在打开 SmartLedger</h1><p>准备本地账本空间…</p></div><div v-else class="auth-card"><div class="auth-mark">🐟</div><div class="eyebrow">SMARTLEDGER</div><h1>轻松记录每一笔。</h1><p>一个独立的个人记账空间，账本、流水、预算与导入工具都在这里。</p><button v-if="!localMockAuth" class="primary-button" :disabled="!!authAction" @click="signIn">{{ authAction==='login'?'正在连接…':'统一账号登录' }} <span>→</span></button><button v-if="!localMockAuth&&registrationEnabled" class="secondary-button" :disabled="!!authAction" @click="register">{{ authAction==='register'?'正在打开注册…':'还没有账号？免费创建' }}</button><a v-if="!ledgerOnly" :href="portalUrl" class="ledger-auth-back">← 返回门户首页</a><button v-if="localMockAuth" class="primary-button" @click="reconnectLocal">重新连接本地服务</button><p v-if="error" class="error-message" role="alert">{{ error }}</p></div></main>
+  <AccountWelcome v-else :portal-url="portalUrl" app-name="日常记账" :show-portal="!ledgerOnly" :loading="loading||redirecting||!!authAction" :auth-error="error" :registration-enabled="registrationEnabled" :local-mock-auth="localMockAuth" @sign-in="localMockAuth?reconnectLocal():signIn()" @register="register"/>
+
 </template>
 
 <style scoped>.auth-card button:disabled{opacity:.65;cursor:wait}.auth-card>.secondary-button{width:100%;margin-top:12px;min-height:44px}.ledger-auth-back{display:block;margin-top:24px;font-size:12px;color:inherit;text-decoration:none;opacity:.65}</style>

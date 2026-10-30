@@ -21,7 +21,9 @@ onMounted(async()=>{
   try{appName.value=platform.application(params.get('app')||'').name;platform.launchTarget(params.get('app')||'',params.get('returnTo'))}
   catch{error.value='应用未注册或返回地址无效，请从门户重新打开应用';loading.value=false;return}
   await initializeAuth();loading.value=false
-  if(!authError.value)await proceed()
+  // This is the central interactive entry. If an iframe cannot restore the
+  // portal client, use one first-party authorization; the IdP cookie supplies SSO.
+  await proceed()
 })
 </script>
 <template><main class="personal-portal portal-system login-entry"><a :href="platform.portalUrl"><ArrowLeft :size="16"/>返回门户</a><section><ShieldCheck :size="36"/><small>PERSONAL SPACE</small><h1>{{ currentUser?'正在打开 '+appName:'统一账号，连接你的应用' }}</h1><p>登录后继续使用 {{ appName }}，账号资料与安全设置由门户统一管理。</p><p v-if="error||authError" role="alert" class="error">{{ error||authError }}</p><button v-if="!error" :disabled="busy" @click="proceed">{{ busy?'正在连接…':currentUser?'继续打开应用':intent==='register'?'创建统一账号':'登录并继续' }}</button></section></main></template>

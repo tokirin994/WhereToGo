@@ -30,10 +30,13 @@ export function createWebAuth(config:Omit<IdentityConfig<User>,'changed'> & {
         const target=new URL(window.location.href)
         if(target.searchParams.has('__sso')){
           target.searchParams.delete('__sso');window.history.replaceState({},'',target.pathname+target.search+target.hash)
-          if(!currentUser.value&&!target.pathname.includes('/auth/')){await identity.resumeSSO(target.pathname+target.search+target.hash);return}
+          if(!currentUser.value&&!target.pathname.includes('/auth/')){authAction.value='login';await identity.resumeSSO(target.pathname+target.search+target.hash);return}
+        }
+        if(config.loginUrl&&!localMockAuth&&!currentUser.value&&!target.pathname.includes('/auth/')&&!target.searchParams.has('signedOut')){
+          authAction.value='login';window.location.replace(config.loginUrl('login',target.pathname+target.search+target.hash));return
         }
         if(initializationError)throw initializationError
-      }catch(cause){authError.value=cause instanceof Error?cause.message:'登录初始化失败'}
+      }catch(cause){authAction.value=null;authError.value=cause instanceof Error?cause.message:'登录初始化失败'}
     })()
   }
   async function openIdentity(action:'login'|'register',returnTo=window.location.pathname+window.location.search+window.location.hash){

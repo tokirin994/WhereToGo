@@ -6,6 +6,21 @@ const config={authority:'https://identity.example/realms/personal',clientId:'tra
 beforeEach(()=>{vi.resetAllMocks();history.replaceState({},'','/');mocks.initialize.mockResolvedValue(undefined)})
 afterEach(()=>vi.unstubAllGlobals())
 describe('shared app authentication controller',()=>{
+  it('hands an unmarked managed app link to the portal once when iframe SSO is unavailable',async()=>{
+    const replace=vi.fn(),loginUrl=vi.fn().mockReturnValue('https://personal.example/login/?app=travel')
+    vi.stubGlobal('window',{location:{href:'https://personal.example/travel/?trip=abc',replace},history:{replaceState:vi.fn()},addEventListener:vi.fn()})
+    mocks.initialize.mockRejectedValue(new Error('iframe blocked'))
+    const auth=createWebAuth({...config,loginUrl});await auth.initializeAuth();await auth.initializeAuth()
+    expect(loginUrl).toHaveBeenCalledExactlyOnceWith('login','/travel/?trip=abc')
+    expect(replace).toHaveBeenCalledExactlyOnceWith('https://personal.example/login/?app=travel')
+    expect(auth.authAction.value).toBe('login');expect(mocks.signIn).not.toHaveBeenCalled()
+  })
+  it.each(['/travel/auth/callback?error=login_required','/travel/?signedOut=1'])('does not create a portal redirect loop at %s',async path=>{
+    const replace=vi.fn(),loginUrl=vi.fn()
+    vi.stubGlobal('window',{location:{href:'https://personal.example'+path,replace},history:{replaceState:vi.fn()},addEventListener:vi.fn()})
+    const auth=createWebAuth({...config,loginUrl});await auth.initializeAuth()
+    expect(replace).not.toHaveBeenCalled();expect(loginUrl).not.toHaveBeenCalled()
+  })
   it('uses an existing silent SSO session without interactive authentication',async()=>{
     const auth=createWebAuth(config)
     mocks.initialize.mockImplementation(async()=>mocks.changed?.({profile:{sub:'alice'}}))
