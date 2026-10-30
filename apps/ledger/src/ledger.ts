@@ -5,27 +5,7 @@ export interface Category {
   id: string; name: string; flowType: FlowType; icon: string; color: string
   parentId: string | null; sortOrder: number
 }
-const categoryIconAliases: Record<string, string> = {
-  'fork-knife':'🍽️','fork.knife':'🍽️','fork-knife-circle-fill':'🍽️',
-  car:'🚗','car.fill':'🚗','car-side':'🚙',house:'🏠','house.fill':'🏠',
-  bag:'🛍️','bag.fill':'🛍️','heart':'❤️','heart.fill':'❤️',book:'📚','book.fill':'📚',
-  game:'🎮','gamecontroller.fill':'🎮',gift:'🎁','gift.fill':'🎁',
-  'credit-card':'💳','creditcard.fill':'💳',more:'🧾',ellipsis:'🧾',
-  wallet:'👛','wallet.pass.fill':'👛',store:'🏪','storefront.fill':'🏪',
-  chart:'📈','chart.bar.fill':'📈',plus:'➕',grid:'▦','square.grid.2x2.fill':'▦',
-  airplane:'✈️','airplane.fill':'✈️','bus.fill':'🚌','tram.fill':'🚇',
-  'cup.and.saucer.fill':'☕','takeoutbag.and.cup.and.straw.fill':'🥡',
-  'cross.case.fill':'🩺','pills.fill':'💊','graduationcap.fill':'🎓',
-  'ticket.fill':'🎟️','bed.double.fill':'🛏️','cart.fill':'🛒',
-}
-export function categoryIcon(icon: string | null | undefined, flowType: FlowType = 'expense') {
-  if (!icon) return flowType === 'income' ? '↙' : '↗'
-  const alias = categoryIconAliases[icon]
-  if (alias) return alias
-  // Stored emoji and pictographs are already display-ready; legacy SF Symbol names are not.
-  if (!/^[\p{L}\p{N}._-]+$/u.test(icon)) return icon
-  return flowType === 'income' ? '↙' : '↗'
-}
+export {categoryIconText as categoryIcon} from './categoryIcons'
 export interface Participant { id: string; name: string }
 export interface Book {
   id: string; name: string; type: BookType; icon: string; color: string; note: string
