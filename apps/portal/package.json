@@ -17,7 +17,7 @@
     "@personal/platform": "file:../../packages/platform"
   },
   "devDependencies": {
-    "@types/node": "^24.13.3",
+    "@types/node": "^26.6.5",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/test-utils": "^2.5.1",
     "@vue/tsconfig": "^0.9.1",
