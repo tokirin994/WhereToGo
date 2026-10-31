@@ -17,6 +17,26 @@
   .ledger-app .modal-shade{padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(12px,env(safe-area-inset-bottom));}
 }
 
+/* The editor also contains native date fields and nested split-setting grids. */
+.ledger-app .entry-page,.ledger-app .entry-editor,.ledger-app .entry-form-body{min-width:0;max-width:100%;width:100%;}
+.ledger-app .entry-editor .feature-form-header>div:first-child,.ledger-app .entry-editor .feature-heading>div:first-child{min-width:0;flex:1;}
+.ledger-app .entry-form-body>*,.ledger-app .entry-editor .feature-fields>*,.ledger-app .assignment-split{min-width:0;max-width:100%;}
+.ledger-app .entry-editor .feature-fields input:not([type=checkbox]):not([type=radio]),.ledger-app .entry-editor .feature-fields select,.ledger-app .entry-editor .feature-fields textarea{background:var(--app-raised);color:var(--app-ink);}
+.ledger-app .entry-editor .feature-fields select{appearance:none;-webkit-appearance:none;padding-right:34px;background-image:linear-gradient(45deg,transparent 50%,var(--app-muted) 50%),linear-gradient(135deg,var(--app-muted) 50%,transparent 50%);background-position:calc(100% - 17px) 50%,calc(100% - 12px) 50%;background-size:5px 5px;background-repeat:no-repeat;}
+.ledger-app .feature-check-chips>label{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;}
+.ledger-app .feature-check-chips input[type=checkbox]{flex:none;}
+@media(max-width:650px){
+ .ledger-app .entry-editor .feature-fields{grid-template-columns:minmax(0,1fr);}
+ .ledger-app .entry-editor input:not([type=checkbox]):not([type=radio]),.ledger-app .entry-editor select,.ledger-app .entry-editor textarea{font-size:16px;min-inline-size:0;}
+ .ledger-app .entry-editor input[type=date],.ledger-app .entry-editor input[type=datetime-local]{display:block;appearance:none;-webkit-appearance:none;inline-size:100%;max-inline-size:100%;min-inline-size:0;box-sizing:border-box;}
+ .ledger-app .entry-editor input::-webkit-date-and-time-value{min-width:0;text-align:left;}
+ .ledger-app .entry-editor .feature-fields input:not([type=checkbox]):not([type=radio]),.ledger-app .entry-editor .feature-fields select{min-height:46px;}
+ .ledger-app .entry-editor .feature-form-footer{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 9px;}
+ .ledger-app .entry-editor .feature-form-footer>small{grid-column:1/-1;min-width:0;line-height:1.8;}
+ .ledger-app .entry-editor .feature-form-footer>button{width:100%;min-width:0;min-height:44px;margin:0;}
+ .ledger-app .entry-editor .entry-advanced summary>span{display:block;margin:6px 0 0;line-height:1.7;}
+}
+
 /* Grid tracks must be allowed to shrink below long titles and scrollable filters. */
 .ledger-app{width:100%;min-width:0;}
 .ledger-app .ledger-main,.ledger-app .page-content,.ledger-app .detail-transactions{min-width:0;max-width:100%;}

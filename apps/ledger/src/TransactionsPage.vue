@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed,ref } from 'vue'
 import CategoryPicker from './CategoryPicker.vue'
 import TransactionList from './TransactionList.vue'
+import BookSelectorDialog from './BookSelectorDialog.vue'
 import UiIcon from './UiIcon.vue'
 import { defaultTransactionFilters, filterLedgerTransactions, money, transactionDateRange, type TransactionFilters } from './ledgerViewModels'
 import {statisticsSummary,type Book,type Category,type LedgerSettings,type Transaction} from './ledger'
 const props=defineProps<{modelValue:TransactionFilters;transactions:Transaction[];categories:Category[];books:Book[];appearanceMode:LedgerSettings['appearanceMode']}>()
 const emit=defineEmits<{'update:modelValue':[value:TransactionFilters];create:[];edit:[tx:Transaction];delete:[tx:Transaction]}>()
 function update<K extends keyof TransactionFilters>(key:K,value:TransactionFilters[K]){emit('update:modelValue',{...props.modelValue,[key]:value})}
+const bookSelectorOpen=ref(false)
+const selectedBook=computed(()=>props.books.find(book=>book.id===props.modelValue.bookId))
 const rows=computed(()=>filterLedgerTransactions(props.transactions,props.categories,props.modelValue))
 const range=computed(()=>transactionDateRange(props.modelValue))
 const dateError=computed(()=>props.modelValue.dateScope==='custom'&&(!props.modelValue.startDate||!props.modelValue.endDate||props.modelValue.startDate>props.modelValue.endDate)?'请选择有效的起止日期，结束日期不能早于开始日期。':'')
@@ -25,10 +28,11 @@ const dateOptions=[{id:'7days',label:'近7天'},{id:'30days',label:'近30天'},{
       <div class="tp-date-chips" role="group" aria-label="时间范围"><button v-for="scope in dateOptions" :key="scope.id" type="button" :aria-pressed="modelValue.dateScope===scope.id" :class="{selected:modelValue.dateScope===scope.id}" @click="update('dateScope',scope.id)"><UiIcon v-if="scope.id==='custom'" name="calendar" :size="13"/>{{ scope.label }}</button></div>
       <div v-if="modelValue.dateScope==='custom'" class="tp-custom-dates"><label>开始日期<input :value="modelValue.startDate" type="date" aria-label="开始日期" @input="update('startDate',($event.target as HTMLInputElement).value)"/></label><span>至</span><label>结束日期<input :value="modelValue.endDate" :min="modelValue.startDate" type="date" aria-label="结束日期" @input="update('endDate',($event.target as HTMLInputElement).value)"/></label><p v-if="dateError" role="alert">{{ dateError }}</p></div>
       <div class="tp-filter-options"><CategoryPicker :model-value="modelValue.categoryId" title="筛选分类" placeholder="全部分类" :categories="categories" :allow-unassigned="true" :appearance-mode="appearanceMode" @update:model-value="update('categoryId',typeof $event==='string'?$event:null)"><template #trigger="{open,summary}"><button type="button" class="tp-filter-choice" :class="{active:modelValue.categoryId}" aria-label="选择流水分类" @click="open"><UiIcon name="filter" :size="16"/><span>{{ summary }}</span><UiIcon name="down" :size="13"/></button></template></CategoryPicker>
-        <label class="tp-filter-choice tp-book-choice" :class="{active:modelValue.bookId}"><UiIcon name="book" :size="16"/><span>{{ books.find(book=>book.id===modelValue.bookId)?.name||'全部账本' }}</span><UiIcon name="down" :size="13"/><select :value="modelValue.bookId||''" aria-label="筛选所属账本" @change="update('bookId',($event.target as HTMLSelectElement).value||null)"><option value="">全部账本</option><option v-for="book in books" :key="book.id" :value="book.id">{{ book.name }}</option></select></label>
+        <button type="button" class="tp-filter-choice tp-book-trigger" :class="{active:modelValue.bookId}" aria-label="选择流水账本" aria-haspopup="dialog" :aria-expanded="bookSelectorOpen" @click="bookSelectorOpen=true"><span class="tp-book-symbol" :style="selectedBook?{'--book-color':selectedBook.color}:undefined"><UiIcon name="book" :size="17"/></span><span class="tp-book-copy"><small>所属账本</small><b>{{ selectedBook?.name||'全部账本' }}</b></span><UiIcon name="down" :size="13"/></button>
       </div>
       <div v-if="filterCount" class="tp-reset-row"><span>已调整 {{ filterCount }} 项筛选</span><button type="button" @click="reset">重置筛选</button></div>
     </section>
+    <BookSelectorDialog v-if="bookSelectorOpen" :books="books" :model-value="modelValue.bookId?[modelValue.bookId]:[]" :allow-all="true" :appearance-mode="appearanceMode" title="筛选账本" @update:model-value="update('bookId',$event[0]||null)" @close="bookSelectorOpen=false"/>
     <section class="tp-summary" aria-label="筛选结果收支汇总"><div><small>支出</small><b class="lv-expense">{{ money(totals.expense) }}</b></div><div><small>收入</small><b class="lv-income">{{ money(totals.income) }}</b></div><div><small>净额</small><b>{{ money(totals.income-totals.expense) }}</b></div><footer v-if="totals.discount||totals.premium"><span v-if="totals.discount">优惠节省 <b>{{ money(totals.discount) }}</b></span><span v-if="totals.premium">额外溢价 <b>{{ money(totals.premium) }}</b></span></footer></section>
     <p class="statistics-note">{{ modelValue.bookId?'按当前账本的本人份额统计':'按本人份额统计，每笔流水仅计一次' }}<span v-if="totals.count!==totals.includedCount"> · {{ totals.count-totals.includedCount }} 笔不计统计</span></p>
     <div class="tp-results-heading"><b>共 {{ rows.length }} 笔记录</b><span>{{ range.start.replaceAll('-','.') }} — {{ range.end.replaceAll('-','.') }}</span></div>
@@ -44,4 +48,7 @@ const dateOptions=[{id:'7days',label:'近7天'},{id:'30days',label:'近30天'},{
 .tp-empty{display:flex;align-items:center;flex-direction:column;padding:36px 18px;border:1px dashed var(--lv-line);border-radius:18px;background:var(--lv-paper);text-align:center;}.tp-empty>span{display:grid;place-items:center;width:60px;height:60px;border-radius:21px;background:var(--lv-soft);color:var(--lv-muted);}.tp-empty>h3{margin:15px 0 7px;font-size:15px;}.tp-empty>p{max-width:320px;margin:0;color:var(--lv-muted);font-size:11px;line-height:1.7;}.tp-empty>div{display:flex;gap:9px;margin-top:18px;}
 @media(min-width:1000px){.tp-filters{grid-template-columns:minmax(250px,.9fr) minmax(320px,1.1fr);}.tp-filters>.lv-search{grid-column:2;grid-row:1;}.tp-filter-options{grid-column:2;grid-row:2;}.tp-reset-row,.tp-custom-dates{grid-column:1/-1;}}
 @media(max-width:600px){.transactions-view{gap:13px;}.tp-intro h2{font-size:21px;}.tp-intro p{font-size:11px;}.tp-filters{gap:11px;padding:13px;border-radius:17px;}.tp-date-chips{gap:5px;}.tp-date-chips button{padding:6px 10px;font-size:10px;}.tp-summary>div{padding:0 12px;margin:14px 0;}.tp-summary>div>b{font-size:16px;}.tp-results-heading>span{font-size:9px;}.tp-filter-choice{padding:9px 10px;gap:7px;font-size:10px;}}
+
+.tp-book-trigger{min-height:49px;gap:9px;background:var(--lv-soft)}.tp-book-trigger>.tp-book-symbol{display:grid;place-items:center;flex:none;width:29px;height:31px;border:1px solid var(--lv-line);border-radius:9px;background:var(--lv-paper);color:var(--book-color,var(--lv-accent))}.tp-book-trigger>.tp-book-copy{display:flex;flex:1;min-width:0;flex-direction:column;align-items:flex-start;gap:4px;overflow:hidden;white-space:normal}.tp-book-copy>small{font-size:9px;color:var(--lv-muted)}.tp-book-copy>b{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:600;color:var(--lv-ink)}.tp-filter-options :deep(.tp-filter-choice:not(.tp-book-trigger)){height:100%}
+@media(max-width:400px){.tp-book-trigger{gap:7px;padding:9px 8px}.tp-book-trigger>.tp-book-symbol{width:25px;height:29px}.tp-book-copy>small{display:none}.tp-book-copy>b{font-size:11px}}
 </style>
