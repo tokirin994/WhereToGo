@@ -1,4 +1,5 @@
 import type { Book, Category, FlowType, Transaction } from './ledger'
+import {statisticsSummary} from './ledger'
 export interface TransactionFilters {
   flow: 'all' | FlowType
   dateScope: '7days' | '30days' | 'month' | 'year' | 'custom'
@@ -11,7 +12,7 @@ export interface TransactionFilters {
 export function localDay(date:Date){const pad=(n:number)=>String(n).padStart(2,'0');return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}`}
 export function defaultTransactionFilters(now=new Date()):TransactionFilters{return{flow:'all',dateScope:'month',startDate:localDay(new Date(now.getFullYear(),now.getMonth(),1)),endDate:localDay(now),categoryId:null,bookId:null,search:''}}
 export function money(amount:number,currency='CNY'){try{return new Intl.NumberFormat('zh-CN',{style:'currency',currency}).format(amount)}catch{return new Intl.NumberFormat('zh-CN',{style:'currency',currency:'CNY'}).format(amount)}}
-export function bookSummary(book:Book,transactions:Transaction[]){const rows=transactions.filter(tx=>tx.bookIds.includes(book.id));const expense=rows.filter(tx=>tx.kind==='expense').reduce((sum,tx)=>sum+tx.amount,0);const income=rows.filter(tx=>tx.kind==='income').reduce((sum,tx)=>sum+tx.amount,0);return{count:rows.length,expense,income,balance:income-expense}}
+export function bookSummary(book:Book,transactions:Transaction[]){return statisticsSummary(transactions.filter(tx=>tx.bookIds.includes(book.id)),book.id)}
 export function categoryTrail(categories:Category[],id:string|null){const result:Category[]=[];const seen=new Set<string>();let current=categories.find(cat=>cat.id===id);while(current&&!seen.has(current.id)){seen.add(current.id);result.unshift(current);current=categories.find(cat=>cat.id===current?.parentId)}return result}
 export function transactionDateRange(filters:TransactionFilters,now=new Date()){
   if(filters.dateScope==='custom')return{start:filters.startDate,end:filters.endDate}

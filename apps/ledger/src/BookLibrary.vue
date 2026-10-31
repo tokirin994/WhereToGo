@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import ActionMenu, { type MenuAction } from './ActionMenu.vue'
 import CategoryIcon from './CategoryIcon.vue'
+import {statisticsSummary} from './ledger'
 import UiIcon from './UiIcon.vue'
 import { bookSummary, money } from './ledgerViewModels'
 import type { Book, Transaction } from './ledger'
@@ -12,7 +13,7 @@ const sort=ref<'recent'|'name'|'count'>('recent')
 const sortLabels={recent:'最近开始',name:'按名称',count:'流水最多'}
 const sortActions:MenuAction[]=[{id:'recent',label:'最近开始',icon:'calendar'},{id:'name',label:'按名称排列',icon:'sort'},{id:'count',label:'流水最多',icon:'list'}]
 const summaries=computed(()=>new Map(props.books.map(book=>[book.id,bookSummary(book,props.transactions)])))
-const overview=computed(()=>{const ids=new Set(props.books.map(book=>book.id));const rows=props.transactions.filter(tx=>tx.bookIds.some(id=>ids.has(id)));return{expense:rows.filter(tx=>tx.kind==='expense').reduce((sum,tx)=>sum+tx.amount,0),income:rows.filter(tx=>tx.kind==='income').reduce((sum,tx)=>sum+tx.amount,0)}})
+const overview=computed(()=>{const ids=new Set(props.books.map(book=>book.id));const rows=props.transactions.filter(tx=>tx.bookIds.some(id=>ids.has(id)));return statisticsSummary(rows)})
 const results=computed(()=>props.books.filter(book=>[book.name,book.note,book.destination].some(value=>value?.toLocaleLowerCase().includes(search.value.trim().toLocaleLowerCase()))).sort((a,b)=>sort.value==='name'?a.name.localeCompare(b.name,'zh-CN'):sort.value==='count'?(summaries.value.get(b.id)!.count-summaries.value.get(a.id)!.count)||a.name.localeCompare(b.name,'zh-CN'):(b.startDate||'').localeCompare(a.startDate||'')||a.name.localeCompare(b.name,'zh-CN')))
 const sections=computed(()=>[{label:'置顶账本',pinned:true,books:results.value.filter(book=>book.isPinned)},{label:results.value.some(book=>book.isPinned)?'其他账本':'全部账本',pinned:false,books:results.value.filter(book=>!book.isPinned)}].filter(section=>section.books.length))
 function period(book:Book){const format=(date:string)=>date.replaceAll('-','.');if(book.startDate)return book.endDate?`${format(book.startDate)} — ${format(book.endDate)}`:`${format(book.startDate)} 起`;return book.endDate?`截至 ${format(book.endDate)}`:'未限定期间'}

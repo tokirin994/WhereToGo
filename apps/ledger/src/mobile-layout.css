@@ -16,3 +16,19 @@
   .ledger-app .modal-card,.ledger-app .calendar-modal{max-width:100%;min-width:0;}
   .ledger-app .modal-shade{padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(12px,env(safe-area-inset-bottom));}
 }
+
+/* Grid tracks must be allowed to shrink below long titles and scrollable filters. */
+.ledger-app{width:100%;min-width:0;}
+.ledger-app .ledger-main,.ledger-app .page-content,.ledger-app .detail-transactions{min-width:0;max-width:100%;}
+.ledger-app .transactions-view>*,.ledger-app .book-detail>*,.ledger-app .tl-days>*{min-width:0;max-width:100%;}
+.ledger-app .statistics-note{margin:0;color:var(--app-muted);font-size:11px;line-height:1.8;overflow-wrap:anywhere;}
+.ledger-app .statistics-toggle{display:flex;align-items:center;gap:8px;margin:13px 0;font-size:11px;line-height:1.7;color:var(--app-muted);cursor:pointer;}
+.ledger-app .statistics-toggle>input[type=checkbox]{width:16px;height:16px;min-height:0;padding:0;flex:none;accent-color:var(--app-accent);}
+@media(max-width:720px){
+ .ledger-app .ledger-main{grid-column:auto;}
+ .ledger-app .tp-custom-dates input,.ledger-app .lv-search input{font-size:16px;}
+ .ledger-app .settlement-panel>div:not(.panel-heading){grid-template-columns:minmax(0,.5fr) minmax(0,1fr);gap:8px;}
+ .ledger-app .settlement-panel>div:not(.panel-heading)>strong{grid-column:2;font-size:12px;}
+ .ledger-app .tp-intro>.lv-button{display:none;}
+ .ledger-app .detail-hero-main p,.ledger-app .settlement-panel b{overflow-wrap:anywhere;}
+}

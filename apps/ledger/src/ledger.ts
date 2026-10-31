@@ -18,6 +18,9 @@ export interface Book {
 export interface LedgerSplitSettings {
   paidByParticipantId: string | null; splitParticipantIds: string[]
   splitMode: 'equal' | 'ratio' | 'fixed'; splitRatio: number | null; splitAmount: number | null
+  includeInStatistics?: boolean; splitEnabled?: boolean; splitParticipantNames?: string[]
+  participantSnapshot?: Array<{id:string;name:string}>
+  splitRatioUnit?: 'percent'
 }
 export interface Transaction {
   id: string; title: string; amount: number; kind: FlowType; happenedAt: string; note: string
@@ -30,6 +33,7 @@ export interface Transaction {
   offsetDateMode?: 'source' | 'independent'
   installmentStartMonth?: string | null
   ledgerSplitSettings?: Record<string, LedgerSplitSettings>
+  splitParticipantNames?: string[]
 }
 export type TransactionDraft = Partial<Transaction> & Pick<Transaction, 'title' | 'amount' | 'kind' | 'happenedAt'> & {
   hasExplicitBookSelection?: boolean
@@ -121,8 +125,9 @@ export const flattenCategories = (items: Category[]) => {
 export function categoryPath(categories: Category[], id: string | null): Category[] {
   const map = new Map(categories.map(item => [item.id, item]))
   const path: Category[] = []
+  const seen = new Set<string>()
   let current = id ? map.get(id) : undefined
-  while (current) { path.unshift(current); current = current.parentId ? map.get(current.parentId) : undefined }
+  while (current&&!seen.has(current.id)) { seen.add(current.id);path.unshift(current); current = current.parentId ? map.get(current.parentId) : undefined }
   return path
 }
 
@@ -180,10 +185,10 @@ function resolveSplitSettings(snapshot: LedgerSnapshot, bookIds: string[], draft
       splitMode: draft.splitMode || 'equal', splitRatio: draft.splitRatio ?? null, splitAmount: draft.splitAmount ?? null,
     }
     const members = new Set(book.participants.map(person => person.id))
-    if (book.participants.length > 1 && (!value.paidByParticipantId || !members.has(value.paidByParticipantId) || !value.splitParticipantIds.length || value.splitParticipantIds.some(person => !members.has(person)))) throw new Error(`请为“${book.name}”选择有效付款人和分账成员`)
-    if (value.splitMode === 'ratio' && (!Number.isFinite(value.splitRatio) || value.splitRatio! < 0 || value.splitRatio! > 100)) throw new Error(`“${book.name}”的本人比例应为 0 至 100`)
-    if (value.splitMode === 'fixed' && (!Number.isFinite(value.splitAmount) || value.splitAmount! < 0 || value.splitAmount! > draft.amount)) throw new Error(`“${book.name}”的本人金额不能超过流水金额`)
-    result[id] = { ...value, splitParticipantIds: [...value.splitParticipantIds] }
+    if (value.splitEnabled!==false&&book.participants.length > 1 && (!value.paidByParticipantId || !members.has(value.paidByParticipantId) || !value.splitParticipantIds.length || value.splitParticipantIds.some(person => !members.has(person)))) throw new Error(`请为“${book.name}”选择有效付款人和分账成员`)
+    if (value.splitEnabled!==false&&value.splitMode === 'ratio' && (!Number.isFinite(value.splitRatio) || value.splitRatio! < 0 || value.splitRatio! > 100)) throw new Error(`“${book.name}”的本人比例应为 0 至 100`)
+    if (value.splitEnabled!==false&&value.splitMode === 'fixed' && (!Number.isFinite(value.splitAmount) || value.splitAmount! < 0 || value.splitAmount! > draft.amount)) throw new Error(`“${book.name}”的本人金额不能超过流水金额`)
+    result[id] = { ...value, splitParticipantIds: [...value.splitParticipantIds], splitParticipantNames:value.splitParticipantIds.map(person=>book.participants.find(member=>member.id===person)?.name||person) }
   }
   return result
 }
@@ -238,6 +243,7 @@ export function createTransaction(snapshot: LedgerSnapshot, draft: TransactionDr
     installmentMonths: months > 1 ? months : null, installmentOriginalTotal: months > 1 ? draft.amount : null,
     originalAmount: draft.originalAmount ?? null, discountAmount: draft.discountAmount ?? null, premiumAmount: draft.premiumAmount ?? null,
     paidByParticipantId: primarySplit?.paidByParticipantId ?? draft.paidByParticipantId ?? null, splitParticipantIds: [...(primarySplit?.splitParticipantIds ?? draft.splitParticipantIds ?? [])],
+    splitParticipantNames: [...(primarySplit?.splitParticipantNames ?? draft.splitParticipantNames ?? [])],
     includeInStatistics: draft.includeInStatistics ?? true, splitMode: primarySplit?.splitMode ?? draft.splitMode ?? 'equal', splitRatio: primarySplit?.splitRatio ?? draft.splitRatio ?? null, splitAmount: primarySplit?.splitAmount ?? draft.splitAmount ?? null,
     offsetSourceTransactionId: draft.offsetSourceTransactionId ?? null,
     ...(draft.offsetDateMode?{offsetDateMode:draft.offsetDateMode}:{}),
@@ -327,6 +333,7 @@ export function createOffsetTransaction(source: Transaction, category: Category,
     bookIds: [...source.bookIds], installmentGroupId: null, installmentIndex: null, installmentMonths: null,
     installmentOriginalTotal: null, installmentStartMonth: null, originalAmount: null, discountAmount: null, premiumAmount: null,
     paidByParticipantId: source.paidByParticipantId, splitParticipantIds: [...source.splitParticipantIds], includeInStatistics: true,
+    splitParticipantNames:[...(source.splitParticipantNames||[])],
     splitMode:source.splitMode,splitRatio:source.splitRatio,splitAmount:source.splitAmount,
     offsetSourceTransactionId: source.id,
     offsetDateMode:options.dateMode||'source',
@@ -347,6 +354,7 @@ function synchronizeLinkedOffsets(snapshot:LedgerSnapshot,previous:Transaction,s
     const mode=offsetDateMode(offset,previous)
     Object.assign(offset,{title:source.title,note:source.note||'抵扣流水',merchant:source.merchant,paymentMethod:source.paymentMethod,
       bookIds:[...source.bookIds],paidByParticipantId:source.paidByParticipantId,splitParticipantIds:[...source.splitParticipantIds],
+      splitParticipantNames:[...(source.splitParticipantNames||[])],splitMode:source.splitMode,splitRatio:source.splitRatio,splitAmount:source.splitAmount,
       ledgerSplitSettings:JSON.parse(JSON.stringify(source.ledgerSplitSettings||{})),offsetSourceTransactionId:source.id,source:`offset:${source.id}|${source.source}`,
       offsetDateMode:mode,...(mode==='source'&&dateChanged?{happenedAt:source.happenedAt}:{}),
       installmentGroupId:null,installmentIndex:null,installmentMonths:null,installmentOriginalTotal:null,installmentStartMonth:null})
@@ -414,25 +422,42 @@ export function rangeForPreset(preset: 'week' | 'month' | 'year', now = new Date
 }
 
 export function dashboardSummary(snapshot: LedgerSnapshot, start: Date, end: Date) {
-  const rows = snapshot.transactions.filter(tx => new Date(tx.happenedAt) >= start && new Date(tx.happenedAt) < end && tx.includeInStatistics)
-  const expenses = rows.filter(tx => tx.kind === 'expense').reduce((sum, tx) => sum + transactionShareAmount(tx), 0)
-  const income = rows.filter(tx => tx.kind === 'income').reduce((sum, tx) => sum + transactionShareAmount(tx), 0)
-  return { expenses, income, balance: income - expenses, transactionCount: rows.length, rows }
+  const rows = snapshot.transactions.filter(tx => new Date(tx.happenedAt) >= start && new Date(tx.happenedAt) < end && transactionInStatistics(tx))
+  const totals=statisticsSummary(rows)
+  return { expenses:totals.expense, income:totals.income, balance:totals.balance, transactionCount: rows.length, rows }
 }
 
+/** Native analytics chooses the first linked ledger in ID order, once per transaction. */
+export function transactionStatisticsSettings(value:Transaction,bookId?:string) {
+  const primary=bookId||[...value.bookIds].filter(id=>Object.prototype.hasOwnProperty.call(value.ledgerSplitSettings||{},id)).sort((a,b)=>a.localeCompare(b,'en',{numeric:true}))[0]
+  return primary?value.ledgerSplitSettings?.[primary]:undefined
+}
+export function transactionInStatistics(value:Transaction,bookId?:string){return value.includeInStatistics!==false&&transactionStatisticsSettings(value,bookId)?.includeInStatistics!==false}
+/** Native links accept fractional ratios; web editor values explicitly use percentages. */
+export function splitRatioPercent(value:Partial<Pick<LedgerSplitSettings,'splitRatio'|'splitRatioUnit'|'splitEnabled'>>){const ratio=value.splitRatio??0;return value.splitRatioUnit!=='percent'&&typeof value.splitEnabled==='boolean'&&ratio>0&&ratio<=1?ratio*100:ratio}
 export function transactionShareAmount(value: Transaction, bookId?: string): number {
-  const transaction = bookId && value.ledgerSplitSettings?.[bookId] ? { ...value, ...value.ledgerSplitSettings[bookId] } : value
-  if (!transaction.splitParticipantIds.length) return transaction.amount
-  if (!transaction.splitParticipantIds.includes('我')) return 0
-  if (transaction.splitMode === 'ratio' && transaction.splitRatio != null) return transaction.amount * Math.max(0,Math.min(100,transaction.splitRatio)) / 100
+  if(!transactionInStatistics(value,bookId))return 0
+  const settings=transactionStatisticsSettings(value,bookId)
+  const transaction = settings ? { ...value, ...settings } : value
+  if (settings?.splitEnabled===false||!transaction.splitParticipantIds?.length) return transaction.amount
+  const participates=transaction.splitParticipantIds.includes('我')||transaction.splitParticipantNames?.includes('我')||settings?.participantSnapshot?.some(member=>member.name==='我'&&transaction.splitParticipantIds.includes(member.id))
+  if (!participates) return 0
+  if (transaction.splitMode === 'ratio' && transaction.splitRatio != null) return transaction.amount * Math.max(0,Math.min(100,settings?splitRatioPercent(settings):transaction.splitRatio)) / 100
   if (transaction.splitMode === 'fixed' && transaction.splitAmount != null) return Math.max(0,Math.min(transaction.amount,transaction.splitAmount))
   return transaction.amount / transaction.splitParticipantIds.length
+}
+
+/** All financial summaries use personal shares; record lists retain the full order amount. */
+export function statisticsSummary(rows:Transaction[],bookId?:string){
+  let expense=0,income=0,discount=0,premium=0,includedCount=0
+  for(const tx of rows){if(!transactionInStatistics(tx,bookId))continue;includedCount++;const amount=transactionShareAmount(tx,bookId);if(tx.kind==='income')income+=amount;else{expense+=amount;discount+=tx.discountAmount||0;premium+=tx.premiumAmount||0}}
+  return {expense,income,balance:income-expense,discount,premium,count:rows.length,includedCount}
 }
 
 export function budgetSpent(snapshot: LedgerSnapshot, budget: Budget, start: Date, end: Date): number {
   return snapshot.transactions.filter(tx => {
     const happened = new Date(tx.happenedAt)
-    if (tx.kind !== 'expense' || !tx.includeInStatistics || happened < start || happened >= end) return false
+    if (tx.kind !== 'expense' || !transactionInStatistics(tx,budget.bookId||undefined) || !(happened >= start && happened < end)) return false
     if (budget.bookId && !tx.bookIds.includes(budget.bookId)) return false
     if (!budget.categoryIds.length) return true
     return budget.categoryIds.some(id => isCategoryWithin(snapshot.categories, tx.categoryId, id))
