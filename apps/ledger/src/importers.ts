@@ -1,8 +1,9 @@
 import readXlsxFile from 'read-excel-file/browser'
-import { createWorker, PSM } from 'tesseract.js'
+import { createWorker, PSM, type Line } from 'tesseract.js'
 import type { FlowType, Transaction } from './ledger'
 import { normalizeOcrName, normalizeOcrText, parseCsv, readBillText } from './ocrText'
 import { loadPdfJs, pdfOptions } from './pdfRuntime'
+import { parseAlipayDetail } from './alipayReceipt'
 
 export interface ImportCandidate extends Partial<Transaction> {
   id: string; confidence: number; rawText: string; details: Array<{ label: string; value: string }>
@@ -13,6 +14,7 @@ export interface ImportCandidate extends Partial<Transaction> {
   sourceId?: string; sourceName?: string; sourcePage?: number; sourceRow?: number; sourceSheet?: string
   offsetEnabled?: boolean; offsetCategoryId?: string | null; offsetRatio?: number
   unboundSplitCount?: number
+  paymentMethodNeedsReview?: boolean
 }
 
 const parseAmount = (text: string): number | null => {
@@ -126,6 +128,8 @@ function parseMeituanOrderList(lines: string[]): ImportCandidate[] {
 export function parseReceiptText(rawText: string): ImportCandidate {
   const text = normalizeOcrText(rawText).replace(/[−－—]/g, '-')
   const lines = text.split(/\n+/).map(line => line.trim()).filter(Boolean)
+  const happenedAt = parseDate(text)
+  const alipay = parseAlipayDetail(lines, happenedAt)
   const fieldValue = (labels: string[]) => {
     for (const label of labels) {
       const index = lines.findIndex(line => line.includes(label))
@@ -145,20 +149,19 @@ export function parseReceiptText(rawText: string): ImportCandidate {
   const hasAmountLabel = lines.some(line => /实际支付|本次支付|实付|支付金额|付款金额|交易金额|支出金额|收入金额|应付金额|合计|总计|订单金额/.test(line))
   const currencyLines = lines.filter(line => /[¥￥$]\s*\d/.test(line) && !/\d{4}[年./-]\d{1,2}[月./-]\d{1,2}|订单号|交易单号|转账单号/.test(line))
   const fallbackAmountLine = currencyLines.at(-1) || lines.filter(line => /\d[\d,]*\.\d{1,2}/.test(line) && !/\d{4}[年./-]\d{1,2}[月./-]\d{1,2}|\d{1,2}:\d{2}|订单号|交易单号|转账单号/.test(line)).at(-1)
-  const amount = labelledAmount?.amount ?? (signedLine ? amountFromLine(signedLine) : hasAmountLabel ? null : fallbackAmountLine ? parseAmount(fallbackAmountLine) ?? amountFromLine(fallbackAmountLine) : null)
-  const happenedAt = parseDate(text)
-  const merchant = fieldValue(['消费商家','商户全称','商家','商户','收款方全称','收款方','店铺'])?.replace(/\s+-\s+.*$/, '').trim()
+  const amount = alipay ? alipay.amount ?? null : labelledAmount?.amount ?? (signedLine ? amountFromLine(signedLine) : hasAmountLabel ? null : fallbackAmountLine ? parseAmount(fallbackAmountLine) ?? amountFromLine(fallbackAmountLine) : null)
+  const merchant = alipay ? alipay.merchant : fieldValue(['消费商家','商户全称','商家','商户','收款方全称','收款方','店铺'])?.replace(/\s+-\s+.*$/, '').trim()
   const product = fieldValue(['商品名称','商品说明','商品','消费项目'])?.replace(/-美团.*$/, '').replace(/-美团App.*$/, '').trim()
   const signedAmount = signedLine?.match(/[−-]\s*[¥￥]?\s*([\d,]+\.\d{1,2})/)
   const explicitOut = /转出|支出|付款成功|付款金额|支付成功/.test(text) || Boolean(signedAmount)
   const income = !explicitOut && (/收入金额|转入|转账收入|退款入账|退款成功|工资到账|到账/.test(text) || (/转账成功/.test(text) && !/转出/.test(text)) || (/收款成功/.test(text) && !/付款方/.test(text)))
-  const kind: FlowType = income ? 'income' : 'expense'
-  const paymentMethod = fieldValue(['支付方式','付款方式','支付渠道']) || ['零钱','花呗','信用卡','银行卡','云闪付','支付宝','微信','现金'].find(channel => text.includes(channel))
-  const title = product || merchant || lines.find(line => line.length > 1 && !/[¥￥$\d]{2,}/.test(line) && !/账单|交易详情|支付成功|微信支付|支付宝/.test(line)) || '识别流水'
-  const details = lines.filter(line => /优惠|原价|折扣|支付方式|支付渠道|交易时间|订单号/.test(line)).map(line => ({ label: line.split(/[:：]/)[0] || '明细', value: line }))
-  const originalAmount = parseAmount(fieldValue(['原价']) || lines.find(line => line.includes('原价')) || '')
+  const kind: FlowType = alipay?.kind || (income ? 'income' : 'expense')
+  const paymentMethod = alipay ? alipay.paymentMethod : fieldValue(['支付方式','付款方式','支付渠道']) || ['零钱','花呗','信用卡','银行卡','云闪付','支付宝','微信','现金'].find(channel => text.includes(channel))
+  const title = alipay?.title || product || merchant || lines.find(line => line.length > 1 && !/[¥￥$\d]{2,}/.test(line) && !/账单|交易详情|支付成功|微信支付|支付宝/.test(line)) || '识别流水'
+  const details = alipay?.details || lines.filter(line => /优惠|原价|折扣|支付方式|支付渠道|交易时间|订单号/.test(line)).map(line => ({ label: line.split(/[:：]/)[0] || '明细', value: line }))
+  const originalAmount = alipay ? alipay.originalAmount : parseAmount(fieldValue(['原价']) || lines.find(line => line.includes('原价')) || '')
   const explicitDiscount = lines.filter(line => /优惠|立减|折扣/.test(line)).map(parseAmount).filter((value): value is number => value !== null).reduce((sum, value) => sum + value, 0)
-  const discountAmount = explicitDiscount || (originalAmount && amount && originalAmount > amount ? Math.round((originalAmount-amount)*100)/100 : undefined)
+  const discountAmount = alipay ? alipay.discountAmount : explicitDiscount || (originalAmount && amount && originalAmount > amount ? Math.round((originalAmount-amount)*100)/100 : undefined)
   const context=`${title} ${merchant||''} ${text}`
   const hour=happenedAt?new Date(happenedAt).getHours():12
   const mealCategory=hour<10?'早餐':hour<15?'午餐':hour<21?'晚餐':'夜宵'
@@ -174,7 +177,7 @@ export function parseReceiptText(rawText: string): ImportCandidate {
   const enterpriseMeal = /工作餐|企业订单|企业用餐/.test(text) && /消费商家|商家|商户/.test(text) && /订单时间|下单时间|支付时间/.test(text) && /消费记录详情|企业订单|大象|企业用餐|企业支付/.test(text)
   const categoryPath = enterpriseMeal ? ['餐饮',happenedAt?mealCategory:'日常吃饭'] : categoryRules.find(([pattern])=>pattern.test(context))?.[1] || (/火锅|餐厅|餐饮|外卖|美团|饭|包子|汉堡|披萨|海底捞|餐|牛肉汤|麻辣烫|米粉|米线|面馆|面条|饺子|馄饨|烧烤|小吃|粥铺/.test(context)?['餐饮',mealCategory]:undefined)
   const confidence = Math.min(0.99, (amount != null ? (amountLine ? 0.48 : 0.36) : 0) + (happenedAt ? 0.2 : 0) + (merchant ? 0.18 : 0) + (paymentMethod ? 0.1 : 0) + (categoryPath ? 0.04 : 0))
-  return { id: crypto.randomUUID(), title: normalizeOcrName(enterpriseMeal ? merchant || title : title), amount: amount ?? undefined, kind: enterpriseMeal?'expense':kind, happenedAt, merchant: merchant ? normalizeOcrName(merchant) : undefined, paymentMethod: enterpriseMeal?'公司补贴':paymentMethod ? normalizeOcrName(paymentMethod) : undefined, confidence, rawText, details: enterpriseMeal?[{label:'识别场景',value:'大象 / 美团企业工作餐'},...details]:details, categoryPath, categoryKeyword: categoryPath?.[1], originalAmount, discountAmount, source: 'ocr', ...(enterpriseMeal?{presetKey:'meituan_enterprise_meal' as const,offsetEnabled:true,offsetRatio:100}:{}) }
+  return { id: crypto.randomUUID(), title: normalizeOcrName(enterpriseMeal ? merchant || title : title), amount: amount ?? undefined, kind: enterpriseMeal?'expense':kind, happenedAt, merchant: merchant ? normalizeOcrName(merchant) : undefined, paymentMethod: enterpriseMeal?'公司补贴':paymentMethod ? normalizeOcrName(paymentMethod) : undefined, paymentMethodNeedsReview: alipay?.paymentMethodNeedsReview, confidence, rawText, details: enterpriseMeal?[{label:'识别场景',value:'大象 / 美团企业工作餐'},...details]:details, categoryPath, categoryKeyword: categoryPath?.[1], originalAmount, discountAmount, source: 'ocr', ...(enterpriseMeal?{presetKey:'meituan_enterprise_meal' as const,offsetEnabled:true,offsetRatio:100}:{}) }
 }
 
 export function parseReceiptTextBatch(rawText: string): ImportCandidate[] {
@@ -237,7 +240,27 @@ async function makeEnhancedImage(file: File): Promise<Blob | null> {
 
 function candidateQuality(candidates: ImportCandidate[]): number {
   if (!candidates.length) return 0
-  return candidates.reduce((sum, candidate) => sum + candidate.confidence + (candidate.amount ? 0.15 : 0) + (candidate.happenedAt ? 0.08 : 0) + (candidate.merchant ? 0.05 : 0), 0) / candidates.length
+  return candidates.reduce((sum, candidate) => sum + candidate.confidence + (candidate.amount ? 0.15 : 0) + (candidate.happenedAt ? 0.08 : 0) + (candidate.merchant ? 0.05 : 0) + (candidate.originalAmount != null ? 0.04 : 0) + (candidate.discountAmount != null ? 0.03 : 0), 0) / candidates.length
+}
+
+async function alipayHeaderImage(file: File, lines: Line[]): Promise<Blob | null> {
+  let bitmap: ImageBitmap | undefined
+  try {
+    bitmap = await createImageBitmap(file)
+    const title = lines.find(line => /账单详情/.test(normalizeOcrName(line.text)))
+    const field = lines.find(line => /^(?:订单金额|支付遇财神|支付时间|付款方式|商品说明)/.test(normalizeOcrName(line.text)))
+    const top = title ? title.bbox.y1 + 8 : bitmap.height * 0.12
+    const bottom = Math.min(field ? field.bbox.y0 - 12 : bitmap.height * 0.39, bitmap.height * 0.55)
+    if (bottom <= top) return null
+    const canvas = document.createElement('canvas')
+    const width = bitmap.width * 0.8, height = bottom - top
+    canvas.width = Math.round(width * 1.5); canvas.height = Math.round(height * 1.5)
+    const context = canvas.getContext('2d')
+    if (!context) return null
+    context.drawImage(bitmap, bitmap.width * 0.1, top, width, height, 0, 0, canvas.width, canvas.height)
+    return await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
+  } catch { return null }
+  finally { bitmap?.close() }
 }
 
 export async function recognizeImage(file: File, onProgress?: (progress: OcrProgress) => void): Promise<ImportCandidate[]> {
@@ -253,7 +276,7 @@ export async function recognizeImage(file: File, onProgress?: (progress: OcrProg
     const enhanced = await makeEnhancedImage(file)
     onProgress?.({ status: '正在识别原图', progress: 0.08 })
     await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO, preserve_interword_spaces: '0' })
-    const originalResult = await worker.recognize(file)
+    const originalResult = await worker.recognize(file, {}, { blocks: true })
     const originalCandidates = [parseReceiptText(originalResult.data.text)]
     if (!enhanced) return originalCandidates
     onProgress?.({ status: '正在识别增强图片并校对结果', progress: 0.52 })
@@ -261,7 +284,24 @@ export async function recognizeImage(file: File, onProgress?: (progress: OcrProg
     await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_COLUMN })
     const enhancedResult = await worker.recognize(enhanced)
     const enhancedCandidates = [parseReceiptText(enhancedResult.data.text)]
-    return candidateQuality(enhancedCandidates) >= candidateQuality(originalCandidates) ? enhancedCandidates : originalCandidates
+    let candidates = candidateQuality(enhancedCandidates) >= candidateQuality(originalCandidates) ? enhancedCandidates : originalCandidates
+    // Large centered amounts can be missed by both whole-page layouts. Re-read
+    // the header alone; do not substitute order price or an advertised discount.
+    if (/账单详情/.test(normalizeOcrText(originalResult.data.text)) && /付款方式|商品说明|收款方全称/.test(normalizeOcrText(originalResult.data.text))) {
+      onProgress?.({ status: '正在核对支付宝账单顶部的实付金额', progress: 0.88 })
+      const header = await alipayHeaderImage(file, (originalResult.data.blocks || []).flatMap(block => block.paragraphs.flatMap(paragraph => paragraph.lines)))
+      if (header) {
+        await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK })
+        const result = await worker.recognize(header)
+        const headerText = normalizeOcrText(result.data.text).replace(/[−－—]/g, '-')
+        if (headerText.split('\n').some(line => /^[+\-]\s*[¥￥]?\s*\d[\d,]*(?:\.\d{1,2})?\s*$/.test(line))) {
+          const original = [parseReceiptText(`${headerText}\n${originalResult.data.text}`)]
+          const enhanced = [parseReceiptText(`${headerText}\n${enhancedResult.data.text}`)]
+          candidates = candidateQuality(enhanced) > candidateQuality(original) ? enhanced : original
+        }
+      }
+    }
+    return candidates
   } finally { await worker.terminate() }
 }
 
@@ -363,7 +403,7 @@ export function confirmCandidate(candidate: ImportCandidate, defaults: { currenc
   return {
     id: crypto.randomUUID(), title: candidate.title.trim(), amount: candidate.amount,
     kind: candidate.kind || 'expense', happenedAt: candidate.happenedAt || new Date().toISOString(),
-    note: '', merchant: candidate.merchant || '', paymentMethod: candidate.paymentMethod || '', source: 'ocr',
+    note: candidate.note || '', merchant: candidate.merchant || '', paymentMethod: candidate.paymentMethod || '', source: 'ocr',
     currency: defaults.currency || 'CNY', categoryId: defaults.categoryId || candidate.categoryId || null,
     bookIds: defaults.bookIds || [], installmentGroupId: null, installmentIndex: null, installmentMonths: null,
     installmentOriginalTotal: null, originalAmount: candidate.originalAmount ?? null, discountAmount: candidate.discountAmount ?? null, premiumAmount: candidate.premiumAmount ?? null,
