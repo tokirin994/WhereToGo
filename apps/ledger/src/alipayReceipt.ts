@@ -1,5 +1,6 @@
 import type { ImportCandidate } from './importers'
 import { normalizeOcrName } from './ocrText'
+import { normalizePaymentChannel } from './paymentChannels'
 
 // Keep the compact Alipay bill separate from generic receipts: its header is
 // the paid amount, while “订单金额” and “商品说明” have different meanings.
@@ -56,7 +57,8 @@ export function parseAlipayDetail(lines: string[], happenedAt?: string): Partial
   const merchant = fields.get('收款方全称') || fields.get('收款方全名') || fields.get('商户全称') || title
   const product = fields.get('商品名称') || fields.get('商品说明')
   const paymentMethod = fields.get('付款方式') || fields.get('支付方式') || fields.get('支付渠道')
-  const paymentMethodNeedsReview = !paymentMethod || !/花呗|余额|零钱|银行|信用卡|储蓄卡|借记卡|数字人民币|先用后付|芝麻信用|支付宝|网联|银联|现金/.test(paymentMethod)
+  const normalizedPayment = normalizePaymentChannel(paymentMethod)
+  const paymentMethodNeedsReview = !normalizedPayment
   const originalAmount = money(fields.get('原价')) ?? money(fields.get('订单金额'))
   const discounts: Array<{ label: string; value: string; amount: number }> = []
   const footer = lines.findIndex(line => /^(?:服务推荐|账单管理)/.test(line))
@@ -76,7 +78,7 @@ export function parseAlipayDetail(lines: string[], happenedAt?: string): Partial
   const details: ImportCandidate['details'] = []
   const dateValue = fields.get('支付时间') || fields.get('交易时间') || fields.get('付款时间')
   if (dateValue || happenedAt) details.push({ label: '支付时间', value: dateValue || new Date(happenedAt!).toLocaleString('zh-CN', { hour12: false }) })
-  if (paymentMethod) details.push({ label: paymentMethodNeedsReview ? '付款方式（待核对）' : '付款方式', value: normalizeOcrName(paymentMethod) })
+  if (paymentMethod) details.push({ label: paymentMethodNeedsReview ? '付款方式（待核对）' : '付款方式', value: normalizedPayment || normalizeOcrName(paymentMethod) })
   const deductionIndex = lines.findIndex(line => /先用后付|芝麻分/.test(line))
   const deductionLines: string[] = []
   if (deductionIndex >= 0) for (const line of lines.slice(deductionIndex, deductionIndex + 3)) {
@@ -90,7 +92,7 @@ export function parseAlipayDetail(lines: string[], happenedAt?: string): Partial
   return {
     title: normalizeOcrName(title || (product && !/^(?:收钱码收款|二维码收款|商家收款|扫码支付)$/.test(product) ? product : merchant) || '支付宝账单'),
     merchant: merchant ? normalizeOcrName(merchant) : undefined,
-    amount, paymentMethod: paymentMethod && !paymentMethodNeedsReview ? normalizeOcrName(paymentMethod) : undefined, paymentMethodNeedsReview,
+    amount, paymentMethod: normalizedPayment, paymentMethodNeedsReview,
     kind: amountLine?.startsWith('+') || /退款成功|退款入账/.test(lines.join('\n')) ? 'income' : 'expense',
     originalAmount, discountAmount: discountAmount || undefined, details,
   }
