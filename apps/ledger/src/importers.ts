@@ -5,6 +5,7 @@ import { normalizeOcrName, normalizeOcrText, parseCsv, readBillText } from './oc
 import { loadPdfJs, pdfOptions } from './pdfRuntime'
 import { parseAlipayDetail, isAlipayDetail } from './alipayReceipt'
 import { normalizePaymentChannel } from './paymentChannels'
+import { normalizeReceiptText, parseWeChatDetail, isWeChatDetail } from './receiptLayout'
 
 export interface ImportCandidate extends Partial<Transaction> {
   id: string; confidence: number; rawText: string; details: Array<{ label: string; value: string }>
@@ -65,7 +66,7 @@ function parseDate(text: string): string | undefined {
   const lines = normalized.split(/\n+/).map(line => line.trim()).filter(Boolean)
   const datePattern = /(20\d{2})\s*[年./-]\s*(\d{1,2})\s*[月./-]\s*(\d{1,2})\s*日?\s*(?:(\d{1,2})\s*[:.时点]\s*(\d{2})(?:\s*[:.]\s*(\d{2}))?)?/
   const shortPattern = /(?:^|\D)(\d{1,2})\s*[月./-]\s*(\d{1,2})\s*日?\s+(\d{1,2})\s*[:.]\s*(\d{2})/
-  const dateLabels = /支付时间|交易时间|订单时间|下单时间|下单|付款时间|消费时间|完成时间|记账时间/
+  const dateLabels = /支付时间|交易时间|订单时间|下单时间|下单|付款时间|转账时间|消费时间|完成时间|记账时间/
   const labelledLines = lines.flatMap((line, index) => dateLabels.test(line) ? [line, lines[index + 1] || ''] : [])
   const candidates = [...labelledLines, normalized]
   if (/今天/.test(normalized) || /昨天/.test(normalized) || /前天/.test(normalized)) {
@@ -128,10 +129,11 @@ function parseMeituanOrderList(lines: string[]): ImportCandidate[] {
 }
 
 export function parseReceiptText(rawText: string): ImportCandidate {
-  const text = normalizeOcrText(rawText).replace(/[−－—﹣‑]/g, '-')
+  const text = normalizeReceiptText(rawText)
   const lines = text.split(/\n+/).map(line => line.trim()).filter(Boolean)
   const happenedAt = parseDate(text)
-  const alipay = parseAlipayDetail(lines, happenedAt)
+  const wechat = parseWeChatDetail(lines)
+  const alipay = wechat ? null : parseAlipayDetail(lines, happenedAt)
   const fieldValue = (labels: string[]) => {
     for (const label of labels) {
       const index = lines.findIndex(line => line.includes(label))
@@ -151,17 +153,17 @@ export function parseReceiptText(rawText: string): ImportCandidate {
   const hasAmountLabel = lines.some(line => /实际支付|本次支付|实付|支付金额|付款金额|交易金额|支出金额|收入金额|应付金额|合计|总计|订单金额/.test(line))
   const currencyLines = lines.filter(line => /[¥￥$]\s*\d/.test(line) && !/\d{4}[年./-]\d{1,2}[月./-]\d{1,2}|订单号|交易单号|转账单号/.test(line))
   const fallbackAmountLine = currencyLines.at(-1) || lines.filter(line => /\d[\d,]*\.\d{1,2}/.test(line) && !/\d{4}[年./-]\d{1,2}[月./-]\d{1,2}|\d{1,2}:\d{2}|订单号|交易单号|转账单号/.test(line)).at(-1)
-  const amount = alipay ? alipay.amount ?? null : labelledAmount?.amount ?? (signedLine ? amountFromLine(signedLine) : hasAmountLabel ? null : fallbackAmountLine ? parseAmount(fallbackAmountLine) ?? amountFromLine(fallbackAmountLine) : null)
-  const merchant = alipay ? alipay.merchant : fieldValue(['消费商家','商户全称','商家','商户','收款方全称','收款方','店铺'])?.replace(/\s+-\s+.*$/, '').trim()
+  const amount = wechat ? wechat.amount ?? null : alipay ? alipay.amount ?? null : labelledAmount?.amount ?? (signedLine ? amountFromLine(signedLine) : hasAmountLabel ? null : fallbackAmountLine ? parseAmount(fallbackAmountLine) ?? amountFromLine(fallbackAmountLine) : null)
+  const merchant = wechat ? wechat.merchant : alipay ? alipay.merchant : fieldValue(['消费商家','商户全称','商家','商户','收款方全称','收款方','店铺'])?.replace(/\s+-\s+.*$/, '').trim()
   const product = fieldValue(['商品名称','商品说明','商品','消费项目'])?.replace(/-美团.*$/, '').replace(/-美团App.*$/, '').trim()
   const signedAmount = signedLine?.match(/[−-]\s*[¥￥]?\s*([\d,]+\.\d{1,2})/)
   const explicitOut = /转出|支出|付款成功|付款金额|支付成功/.test(text) || Boolean(signedAmount)
   const income = !explicitOut && (/收入金额|转入|转账收入|退款入账|退款成功|工资到账|到账/.test(text) || (/转账成功/.test(text) && !/转出/.test(text)) || (/收款成功/.test(text) && !/付款方/.test(text)))
-  const kind: FlowType = alipay?.kind || (income ? 'income' : 'expense')
-  const detectedPaymentMethod = alipay ? alipay.paymentMethod : fieldValue(['支付方式','付款方式','支付渠道']) || ['零钱','花呗','信用卡','银行卡','云闪付','支付宝','微信','现金'].find(channel => text.includes(channel))
+  const kind: FlowType = wechat?.kind || alipay?.kind || (income ? 'income' : 'expense')
+  const detectedPaymentMethod = wechat ? wechat.paymentMethod : alipay ? alipay.paymentMethod : fieldValue(['支付方式','付款方式','支付渠道']) || ['零钱','花呗','信用卡','银行卡','云闪付','支付宝','微信','现金'].find(channel => text.includes(channel))
   const paymentMethod = normalizePaymentChannel(detectedPaymentMethod) || detectedPaymentMethod
-  const title = alipay?.title || product || merchant || lines.find(line => line.length > 1 && !/[¥￥$\d]{2,}/.test(line) && !/账单|交易详情|支付成功|微信支付|支付宝/.test(line)) || '识别流水'
-  const details = alipay?.details || lines.filter(line => /优惠|原价|折扣|支付方式|支付渠道|交易时间|订单号/.test(line)).map(line => ({ label: line.split(/[:：]/)[0] || '明细', value: line }))
+  const title = wechat?.title || alipay?.title || product || merchant || lines.find(line => line.length > 1 && !/[¥￥$\d]{2,}/.test(line) && !/账单|交易详情|支付成功|微信支付|支付宝/.test(line)) || '识别流水'
+  const details = wechat?.details || alipay?.details || lines.filter(line => /优惠|原价|折扣|支付方式|支付渠道|交易时间|订单号/.test(line)).map(line => ({ label: line.split(/[:：]/)[0] || '明细', value: line }))
   const originalAmount = alipay ? alipay.originalAmount : parseAmount(fieldValue(['原价']) || lines.find(line => line.includes('原价')) || '')
   const explicitDiscount = lines.filter(line => /优惠|立减|折扣/.test(line)).map(parseAmount).filter((value): value is number => value !== null).reduce((sum, value) => sum + value, 0)
   const discountAmount = alipay ? alipay.discountAmount : explicitDiscount || (originalAmount && amount && originalAmount > amount ? Math.round((originalAmount-amount)*100)/100 : undefined)
@@ -261,12 +263,12 @@ function candidateQuality(candidates: ImportCandidate[]): number {
   return candidates.reduce((sum, candidate) => sum + candidate.confidence + (candidate.amount ? 0.15 : 0) + (candidate.happenedAt ? 0.08 : 0) + (candidate.merchant ? 0.05 : 0) + (candidate.originalAmount != null ? 0.04 : 0) + (candidate.discountAmount != null ? 0.03 : 0), 0) / candidates.length
 }
 
-async function alipayHeaderImage(file: File, lines: Line[]): Promise<Blob | null> {
+async function receiptHeaderImage(file: File, lines: Line[]): Promise<Blob | null> {
   let bitmap: Awaited<ReturnType<typeof loadOcrImage>> | undefined
   try {
     bitmap = await loadOcrImage(file)
-    const title = lines.find(line => /账单详情/.test(normalizeOcrName(line.text)))
-    const field = lines.find(line => /^(?:订单金额|支付遇财神|支付时间|付款方式|商品说明)/.test(normalizeOcrName(line.text)))
+    const title = lines.find(line => /账单|交易详情|零钱明细/.test(normalizeReceiptText(line.text)))
+    const field = lines.find(line => /^(?:当前状态|收款方备注|转账时间|订单金额|支付遇财神|支付时间|付款方式|支付方式|商品说明)/.test(normalizeReceiptText(line.text)))
     const top = title ? title.bbox.y1 + 8 : bitmap.height * 0.12
     const bottom = Math.min(field ? field.bbox.y0 - 12 : bitmap.height * 0.39, bitmap.height * 0.55)
     if (bottom <= top) return null
@@ -311,6 +313,28 @@ async function paymentFieldImage(file: File, lines: Line[]): Promise<Blob | null
     return await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
   } catch { return null }
   finally { image?.close() }
+}
+
+async function receiptAmountImage(file: File, lines: Line[]): Promise<Blob | null> {
+  const row = lines.find(line => /^[+-]\s*[¥￥]?\s*\d[\d,]*\.\d{1,2}$/.test(normalizeReceiptText(line.text)))
+  if (!row) return null
+  let image: Awaited<ReturnType<typeof loadOcrImage>> | undefined
+  try {
+    image=await loadOcrImage(file)
+    const left=Math.max(0,row.bbox.x0-10),top=Math.max(0,row.bbox.y0-10)
+    const width=Math.min(image.width-left,row.bbox.x1-left+10),height=Math.min(image.height-top,row.bbox.y1-top+10)
+    const scale=Math.min(2,Math.max(.5,48/Math.max(1,row.bbox.y1-row.bbox.y0)))
+    const canvas=document.createElement('canvas');canvas.width=Math.round(width*scale);canvas.height=Math.round(height*scale)
+    const context=canvas.getContext('2d',{willReadFrequently:true});if(!context)return null
+    context.drawImage(image.source,left,top,width,height,0,0,canvas.width,canvas.height)
+    const pixels=context.getImageData(0,0,canvas.width,canvas.height),data=pixels.data
+    const corners=[0,(canvas.width-1)*4,(canvas.height-1)*canvas.width*4,(canvas.width*canvas.height-1)*4]
+    const dark=corners.reduce((sum,index)=>sum+(data[index]!+data[index+1]!+data[index+2]!)/3,0)/corners.length<128
+    for(let index=0;index<data.length;index+=4){const gray=data[index]!*.299+data[index+1]!*.587+data[index+2]!*.114;const value=dark?255-gray:gray;data[index]=data[index+1]=data[index+2]=value}
+    context.putImageData(pixels,0,0)
+    return await new Promise(resolve=>canvas.toBlob(resolve,'image/png'))
+  } catch{return null}
+  finally{image?.close()}
 }
 
 async function refinePaymentField(file: File, lines: Line[], candidates: ImportCandidate[], assetBase: string, onProgress?: (progress: OcrProgress) => void) {
@@ -363,9 +387,9 @@ export async function recognizeImage(file: File, onProgress?: (progress: OcrProg
     candidates = candidateQuality(enhancedCandidates) >= candidateQuality(originalCandidates) ? enhancedCandidates : originalCandidates
     // Large centered amounts can be missed by both whole-page layouts. Re-read
     // the header alone; do not substitute order price or an advertised discount.
-    if ([originalResult.data.text, enhancedText].some(text => isAlipayDetail(normalizeOcrText(text).split('\n')))) {
-      onProgress?.({ status: '正在核对支付宝账单顶部的实付金额', progress: 0.88 })
-      const header = await alipayHeaderImage(file, receiptLines)
+    if ([originalResult.data.text, enhancedText].some(text => isAlipayDetail(normalizeReceiptText(text).split('\n')) || isWeChatDetail(normalizeReceiptText(text).split('\n')))) {
+      onProgress?.({ status: '正在核对账单顶部的实付金额', progress: 0.88 })
+      const header = await receiptHeaderImage(file, receiptLines)
       if (header) {
         await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK })
         const result = await worker.recognize(header)
@@ -374,6 +398,19 @@ export async function recognizeImage(file: File, onProgress?: (progress: OcrProg
           const original = [parseReceiptText(`${headerText}\n${originalResult.data.text}`)]
           const enhanced = [parseReceiptText(`${headerText}\n${enhancedText}`)]
           candidates = candidateQuality(enhanced) > candidateQuality(original) ? enhanced : original
+        }
+      }
+    }
+    if ([originalResult.data.text,enhancedText].some(text=>isWeChatDetail(normalizeReceiptText(text).split('\n')))) {
+      const amountImage=await receiptAmountImage(file,receiptLines)
+      if(amountImage){
+        onProgress?.({status:'正在校对微信账单实付金额',progress:.93})
+        await worker.reinitialize('eng',1)
+        await worker.setParameters({tessedit_pageseg_mode:PSM.SINGLE_LINE,tessedit_char_whitelist:'0123456789.,+-',preserve_interword_spaces:'0'})
+        const read=await worker.recognize(amountImage),text=read.data.text.replace(/\s/g,'').replaceAll(',','')
+        if(/^[+-]?\d+\.\d{1,2}$/.test(text)&&read.data.confidence>=70&&Math.abs(Number(text))>0){
+          candidates[0]!.amount=Math.abs(Number(text))
+          candidates[0]!.details.push({label:'实付金额',value:Math.abs(Number(text)).toFixed(2)})
         }
       }
     }
