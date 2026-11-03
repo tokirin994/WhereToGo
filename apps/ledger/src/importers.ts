@@ -3,7 +3,7 @@ import { createWorker, PSM, type Line } from 'tesseract.js'
 import type { FlowType, Transaction } from './ledger'
 import { normalizeOcrName, normalizeOcrText, parseCsv, readBillText } from './ocrText'
 import { loadPdfJs, pdfOptions } from './pdfRuntime'
-import { parseAlipayDetail } from './alipayReceipt'
+import { parseAlipayDetail, isAlipayDetail } from './alipayReceipt'
 
 export interface ImportCandidate extends Partial<Transaction> {
   id: string; confidence: number; rawText: string; details: Array<{ label: string; value: string }>
@@ -38,11 +38,12 @@ const amountFromLine = (line: string): number | null => {
 }
 
 const labelledPaymentAmount = (lines: string[]): { line: string; amount: number } | undefined => {
-  const paymentLabel = /(?:实际支付(?:金额)?|本次支付(?:金额)?|实付(?:款)?(?:金额)?|支付金额|付款金额|交易金额|支出金额|收入金额|应付金额|合计|总计|订单金额)/
-  for (let index = 0; index < lines.length; index++) {
+  const paymentLabel = /(?:实际支付(?:金额)?|本次支付(?:金额)?|实付(?:款)?(?:金额)?|支付金额|付款金额|交易金额|支出金额|收入金额|应付金额|合计|总计)/
+  const indices = lines.map((_, index) => index).sort((a, b) => Number(/实际支付|本次支付|实付/.test(lines[b]!)) - Number(/实际支付|本次支付|实付/.test(lines[a]!)))
+  for (const index of indices) {
     const line = lines[index]
     if (!paymentLabel.test(line)) continue
-    const inline = line.match(/(?:实际支付(?:金额)?|本次支付(?:金额)?|实付(?:款)?(?:金额)?|支付金额|付款金额|交易金额|支出金额|收入金额|应付金额|合计|总计|订单金额)\s*[:：]?\s*[¥￥$]?\s*(\d[\d,]*(?:\.\d{1,2})?)/)
+    const inline = line.match(/(?:实际支付(?:金额)?|本次支付(?:金额)?|实付(?:款)?(?:金额)?|支付金额|付款金额|交易金额|支出金额|收入金额|应付金额|合计|总计)\s*[:：]?\s*[¥￥$]?\s*(\d[\d,]*(?:\.\d{1,2})?)/)
     if (inline) {
       const amount = Number(inline[1].replaceAll(',', ''))
       if (Number.isFinite(amount) && amount > 0) return { line, amount }
@@ -126,7 +127,7 @@ function parseMeituanOrderList(lines: string[]): ImportCandidate[] {
 }
 
 export function parseReceiptText(rawText: string): ImportCandidate {
-  const text = normalizeOcrText(rawText).replace(/[−－—]/g, '-')
+  const text = normalizeOcrText(rawText).replace(/[−－—﹣‑]/g, '-')
   const lines = text.split(/\n+/).map(line => line.trim()).filter(Boolean)
   const happenedAt = parseDate(text)
   const alipay = parseAlipayDetail(lines, happenedAt)
@@ -143,7 +144,7 @@ export function parseReceiptText(rawText: string): ImportCandidate {
   }
   const labelledAmount = labelledPaymentAmount(lines)
   const amountLine = labelledAmount?.line
-  const signedLine = lines.find(line => !/\d{4}[年./-]\d{1,2}[月./-]\d{1,2}|\d{1,2}:\d{2}|订单号|交易单号|转账单号/.test(line) && /[−-]\s*[¥￥]?\s*\d[\d,]*\.\d{1,2}/.test(line))
+  const signedLine = lines.find(line => !/\d{4}[年./-]\d{1,2}[月./-]\d{1,2}|\d{1,2}:\d{2}|订单号|交易单号|转账单号|原价|订单金额|优惠|遇财神|折扣|立减|积分|最高/.test(line) && /[−-]\s*[¥￥]?\s*\d[\d,]*\.\d{1,2}/.test(line))
   // Prefer explicitly labelled payment totals; never fall back to unrelated numbers
   // (order IDs, original prices, discounts) when a payment label is present.
   const hasAmountLabel = lines.some(line => /实际支付|本次支付|实付|支付金额|付款金额|交易金额|支出金额|收入金额|应付金额|合计|总计|订单金额/.test(line))
@@ -214,17 +215,31 @@ export interface OcrProgress {
   progress?: number
 }
 
-async function makeEnhancedImage(file: File): Promise<Blob | null> {
+async function loadOcrImage(file: File): Promise<{source: CanvasImageSource; width: number; height: number; close: () => void}> {
   try {
     const bitmap = await createImageBitmap(file)
+    return {source: bitmap, width: bitmap.width, height: bitmap.height, close: () => bitmap.close()}
+  } catch {
+    // Safari can reject createImageBitmap for an otherwise displayable image.
+    const url = URL.createObjectURL(file), image = new Image()
+    try {
+      await new Promise<void>((resolve, reject) => { image.onload = () => resolve(); image.onerror = () => reject(new Error('图片无法解码')); image.src = url })
+      return {source: image, width: image.naturalWidth, height: image.naturalHeight, close: () => URL.revokeObjectURL(url)}
+    } catch (error) { URL.revokeObjectURL(url); throw error }
+  }
+}
+
+async function makeEnhancedImage(file: File): Promise<Blob | null> {
+  let bitmap: Awaited<ReturnType<typeof loadOcrImage>> | undefined
+  try {
+    bitmap = await loadOcrImage(file)
     const scale = Math.min(2.2, Math.max(1.4, 1800 / Math.max(bitmap.width, bitmap.height)))
     const canvas = document.createElement('canvas')
     canvas.width = Math.round(bitmap.width * scale)
     canvas.height = Math.round(bitmap.height * scale)
     const context = canvas.getContext('2d', { willReadFrequently: true })
-    if (!context) { bitmap.close(); return null }
-    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-    bitmap.close()
+    if (!context) return null
+    context.drawImage(bitmap.source, 0, 0, canvas.width, canvas.height)
     const image = context.getImageData(0, 0, canvas.width, canvas.height)
     const data = image.data
     for (let i = 0; i < data.length; i += 4) {
@@ -236,6 +251,7 @@ async function makeEnhancedImage(file: File): Promise<Blob | null> {
     context.putImageData(image, 0, 0)
     return await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
   } catch { return null }
+  finally { bitmap?.close() }
 }
 
 function candidateQuality(candidates: ImportCandidate[]): number {
@@ -244,9 +260,9 @@ function candidateQuality(candidates: ImportCandidate[]): number {
 }
 
 async function alipayHeaderImage(file: File, lines: Line[]): Promise<Blob | null> {
-  let bitmap: ImageBitmap | undefined
+  let bitmap: Awaited<ReturnType<typeof loadOcrImage>> | undefined
   try {
-    bitmap = await createImageBitmap(file)
+    bitmap = await loadOcrImage(file)
     const title = lines.find(line => /账单详情/.test(normalizeOcrName(line.text)))
     const field = lines.find(line => /^(?:订单金额|支付遇财神|支付时间|付款方式|商品说明)/.test(normalizeOcrName(line.text)))
     const top = title ? title.bbox.y1 + 8 : bitmap.height * 0.12
@@ -257,7 +273,7 @@ async function alipayHeaderImage(file: File, lines: Line[]): Promise<Blob | null
     canvas.width = Math.round(width * 1.5); canvas.height = Math.round(height * 1.5)
     const context = canvas.getContext('2d')
     if (!context) return null
-    context.drawImage(bitmap, bitmap.width * 0.1, top, width, height, 0, 0, canvas.width, canvas.height)
+    context.drawImage(bitmap.source, bitmap.width * 0.1, top, width, height, 0, 0, canvas.width, canvas.height)
     return await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
   } catch { return null }
   finally { bitmap?.close() }
@@ -278,25 +294,26 @@ export async function recognizeImage(file: File, onProgress?: (progress: OcrProg
     await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO, preserve_interword_spaces: '0' })
     const originalResult = await worker.recognize(file, {}, { blocks: true })
     const originalCandidates = [parseReceiptText(originalResult.data.text)]
-    if (!enhanced) return originalCandidates
-    onProgress?.({ status: '正在识别增强图片并校对结果', progress: 0.52 })
-    // A single-column pass works better for long mobile payment screenshots and receipts.
-    await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_COLUMN })
-    const enhancedResult = await worker.recognize(enhanced)
-    const enhancedCandidates = [parseReceiptText(enhancedResult.data.text)]
+    let enhancedText = originalResult.data.text
+    if (enhanced) {
+      onProgress?.({ status: '正在识别增强图片并校对结果', progress: 0.52 })
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_COLUMN })
+      try { enhancedText = (await worker.recognize(enhanced)).data.text } catch { /* Keep the original and continue the header pass. */ }
+    }
+    const enhancedCandidates = [parseReceiptText(enhancedText)]
     let candidates = candidateQuality(enhancedCandidates) >= candidateQuality(originalCandidates) ? enhancedCandidates : originalCandidates
     // Large centered amounts can be missed by both whole-page layouts. Re-read
     // the header alone; do not substitute order price or an advertised discount.
-    if (/账单详情/.test(normalizeOcrText(originalResult.data.text)) && /付款方式|商品说明|收款方全称/.test(normalizeOcrText(originalResult.data.text))) {
+    if ([originalResult.data.text, enhancedText].some(text => isAlipayDetail(normalizeOcrText(text).split('\n')))) {
       onProgress?.({ status: '正在核对支付宝账单顶部的实付金额', progress: 0.88 })
       const header = await alipayHeaderImage(file, (originalResult.data.blocks || []).flatMap(block => block.paragraphs.flatMap(paragraph => paragraph.lines)))
       if (header) {
         await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK })
         const result = await worker.recognize(header)
-        const headerText = normalizeOcrText(result.data.text).replace(/[−－—]/g, '-')
+        const headerText = normalizeOcrText(result.data.text).replace(/[−－—﹣‑]/g, '-')
         if (headerText.split('\n').some(line => /^[+\-]\s*[¥￥]?\s*\d[\d,]*(?:\.\d{1,2})?\s*$/.test(line))) {
           const original = [parseReceiptText(`${headerText}\n${originalResult.data.text}`)]
-          const enhanced = [parseReceiptText(`${headerText}\n${enhancedResult.data.text}`)]
+          const enhanced = [parseReceiptText(`${headerText}\n${enhancedText}`)]
           candidates = candidateQuality(enhanced) > candidateQuality(original) ? enhanced : original
         }
       }

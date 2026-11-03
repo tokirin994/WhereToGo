@@ -3,7 +3,7 @@ import { normalizeOcrName } from './ocrText'
 
 // Keep the compact Alipay bill separate from generic receipts: its header is
 // the paid amount, while “订单金额” and “商品说明” have different meanings.
-const labels = ['收款方全称', '收款方全名', '商户全称', '支付时间', '交易时间', '付款时间', '付款方式', '支付方式', '支付渠道', '商品说明', '商品名称', '订单金额', '原价', '当前状态', '扣款说明', '交易单号', '商户单号', '订单号', '支付奖励', '服务推荐', '账单管理', '账单分类', '标签', '更多']
+const labels = ['收款方全称', '收款方全名', '商户全称', '支付时间', '交易时间', '付款时间', '付款方式', '支付方式', '支付渠道', '商品说明', '商品名称', '实际支付金额', '实付金额', '实际支付', '实付款', '实付', '订单金额', '原价', '当前状态', '扣款说明', '交易单号', '商户单号', '订单号', '支付奖励', '服务推荐', '账单管理', '账单分类', '标签', '更多']
 const benefit = /^(?:优惠|支付遇财神|遇财神|支付优惠|银行卡优惠|红包优惠|银行卡立减|红包|立减|摇优惠|折扣)/
 const promotion = /积分|领取|最高|推荐|开通|贴纸|兑换|可享|待领取/
 const moneyOnly = /^[+\-]?\s*[¥￥$]?\s*\d[\d,]*(?:\.\d{1,2})?\s*(?:元)?$/
@@ -17,8 +17,14 @@ const money = (value: string | undefined): number | undefined => {
   return Number.isFinite(amount) ? amount : undefined
 }
 
+export function isAlipayDetail(lines: string[]): boolean {
+  const text = lines.join('\n')
+  const fields = ['付款方式', '商品说明', '收款方全称', '收款方全名', '支付遇财神'].filter(label => text.includes(label))
+  return (/账单详情|支付宝/.test(text) && fields.length > 0) || (fields.length >= 2 && /订单金额|交易成功|支付时间/.test(text)) || (fields.length > 0 && /订单金额/.test(text) && /支付时间/.test(text) && /交易成功/.test(text))
+}
+
 export function parseAlipayDetail(lines: string[], happenedAt?: string): Partial<ImportCandidate> | null {
-  if (!lines.some(line => /账单详情/.test(line)) || !lines.some(line => /付款方式|商品说明|收款方全称|支付遇财神/.test(line))) return null
+  if (!isAlipayDetail(lines)) return null
   const fields = new Map<string, string>()
   for (let index = 0; index < lines.length; index++) {
     const label = fieldLabel(lines[index]!)
@@ -38,11 +44,15 @@ export function parseAlipayDetail(lines: string[], happenedAt?: string): Partial
   }
   const firstField = lines.findIndex(line => Boolean(fieldLabel(line)) || benefit.test(line))
   const header = lines.slice(0, firstField < 0 ? lines.length : firstField)
-  const amountIndex = header.findIndex(line => moneyOnly.test(line) && /^[+\-¥￥$]/.test(line))
+  let amountIndex = header.findIndex(line => moneyOnly.test(line) && /^[+\-¥￥$]/.test(line))
+  if (amountIndex < 0) amountIndex = header.findIndex(line => /^\d[\d,]*\.\d{1,2}$/.test(line))
   const amountLine = amountIndex < 0 ? undefined : header[amountIndex]
-  const amount = money(amountLine) ?? (lines.some(line => benefit.test(line)) ? undefined : money(fields.get('订单金额')))
-  const title = amountIndex < 0 ? undefined : [...header.slice(0, amountIndex)].reverse().find(line =>
-    /[\p{Script=Han}A-Za-z]/u.test(line) && !/账单详情|交易详情|支付宝|交易成功|支付成功|已完成|\d{1,2}:\d{2}|5G|4G|LTE/.test(line) && !promotion.test(line))
+  // Order price is never evidence of actual payment, even if the benefit label
+  // was missed by OCR. Leave the amount empty when no payment was read.
+  const amount = money(amountLine) ?? ['实际支付金额', '实付金额', '实际支付', '实付款', '实付'].map(label => money(fields.get(label))).find(value => value != null)
+  const titleLines = header.slice(0, amountIndex < 0 ? header.length : amountIndex)
+  const title = [...titleLines].reverse().find(line =>
+    /[\p{Script=Han}]|[A-Za-z]{2}/u.test(line) && !/账单详情|交易详情|支付宝|交易成功|支付成功|已完成|收钱码收款|\d{1,2}:\d{2}|5G|4G|LTE/.test(line) && !promotion.test(line))
   const merchant = fields.get('收款方全称') || fields.get('收款方全名') || fields.get('商户全称') || title
   const product = fields.get('商品名称') || fields.get('商品说明')
   const paymentMethod = fields.get('付款方式') || fields.get('支付方式') || fields.get('支付渠道')
