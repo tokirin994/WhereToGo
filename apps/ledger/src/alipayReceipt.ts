@@ -20,7 +20,7 @@ const money = (value: string | undefined): number | undefined => {
 
 export function isAlipayDetail(lines: string[]): boolean {
   const text = lines.join('\n')
-  const fields = ['付款方式', '商品说明', '收款方全称', '收款方全名', '支付遇财神'].filter(label => text.includes(label))
+  const fields = ['付款方式', '支付方式', '支付渠道', '商品说明', '收款方全称', '收款方全名', '支付遇财神'].filter(label => text.includes(label))
   return (/账单详情|支付宝/.test(text) && fields.length > 0) || (fields.length >= 2 && /订单金额|交易成功|支付时间/.test(text)) || (fields.length > 0 && /订单金额/.test(text) && /支付时间/.test(text) && /交易成功/.test(text))
 }
 

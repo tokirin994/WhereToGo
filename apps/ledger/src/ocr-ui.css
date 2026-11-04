@@ -71,3 +71,5 @@
 
 /* Parsed explanations stay visible beside the editable fields on phones too. */
 .ocr-supplement-details{display:grid;grid-template-columns:minmax(64px,auto) minmax(0,1fr);gap:11px 16px;margin:0 0 19px;padding:15px;border:1px solid var(--app-line);border-radius:12px;background:var(--app-raised);font-size:12px;line-height:1.7;}.ocr-supplement-details dt{color:var(--app-muted);}.ocr-supplement-details dd{min-width:0;margin:0;overflow-wrap:anywhere;white-space:pre-wrap;color:var(--app-ink);}
+
+.ocr-diagnostics dl{margin:0;padding:0 12px 14px;font-size:10px;line-height:1.7;}.ocr-diagnostics dt{margin-top:9px;color:var(--app-muted);}.ocr-diagnostics dd{margin:2px 0 0;color:var(--app-ink);overflow-wrap:anywhere;user-select:text;}

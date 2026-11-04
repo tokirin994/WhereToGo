@@ -6,6 +6,7 @@ import { loadPdfJs, pdfOptions } from './pdfRuntime'
 import { parseAlipayDetail, isAlipayDetail } from './alipayReceipt'
 import { normalizePaymentChannel } from './paymentChannels'
 import { normalizeReceiptText, parseWeChatDetail, isWeChatDetail } from './receiptLayout'
+import { canonicalOcrFile, paintOcrRegion, ocrWorkerOptions, ocrFingerprint, OCR_REVISION, OCR_MODEL_CACHE, type OcrDiagnostic } from './ocrRuntime'
 
 export interface ImportCandidate extends Partial<Transaction> {
   id: string; confidence: number; rawText: string; details: Array<{ label: string; value: string }>
@@ -17,6 +18,7 @@ export interface ImportCandidate extends Partial<Transaction> {
   offsetEnabled?: boolean; offsetCategoryId?: string | null; offsetRatio?: number
   unboundSplitCount?: number
   paymentMethodNeedsReview?: boolean
+  ocrDiagnostic?: OcrDiagnostic
 }
 
 const parseAmount = (text: string): number | null => {
@@ -228,7 +230,7 @@ async function loadOcrImage(file: File): Promise<{source: CanvasImageSource; wid
     const url = URL.createObjectURL(file), image = new Image()
     try {
       await new Promise<void>((resolve, reject) => { image.onload = () => resolve(); image.onerror = () => reject(new Error('图片无法解码')); image.src = url })
-      return {source: image, width: image.naturalWidth, height: image.naturalHeight, close: () => URL.revokeObjectURL(url)}
+      return {source: image, width: image.naturalWidth, height: image.naturalHeight, close: () => { image.src=''; URL.revokeObjectURL(url) }}
     } catch (error) { URL.revokeObjectURL(url); throw error }
   }
 }
@@ -243,7 +245,7 @@ async function makeEnhancedImage(file: File): Promise<Blob | null> {
     canvas.height = Math.round(bitmap.height * scale)
     const context = canvas.getContext('2d', { willReadFrequently: true })
     if (!context) return null
-    context.drawImage(bitmap.source, 0, 0, canvas.width, canvas.height)
+    paintOcrRegion(context,bitmap.source,0,0,bitmap.width,bitmap.height,0,0,canvas.width,canvas.height)
     const image = context.getImageData(0, 0, canvas.width, canvas.height)
     const data = image.data
     for (let i = 0; i < data.length; i += 4) {
@@ -253,7 +255,9 @@ async function makeEnhancedImage(file: File): Promise<Blob | null> {
       data[i] = data[i + 1] = data[i + 2] = enhanced
     }
     context.putImageData(image, 0, 0)
-    return await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
+    const blob=await new Promise<Blob|null>(resolve => canvas.toBlob(resolve, 'image/png'))
+    canvas.width=canvas.height=0
+    return blob
   } catch { return null }
   finally { bitmap?.close() }
 }
@@ -261,6 +265,13 @@ async function makeEnhancedImage(file: File): Promise<Blob | null> {
 function candidateQuality(candidates: ImportCandidate[]): number {
   if (!candidates.length) return 0
   return candidates.reduce((sum, candidate) => sum + candidate.confidence + (candidate.amount ? 0.15 : 0) + (candidate.happenedAt ? 0.08 : 0) + (candidate.merchant ? 0.05 : 0) + (candidate.originalAmount != null ? 0.04 : 0) + (candidate.discountAmount != null ? 0.03 : 0), 0) / candidates.length
+}
+
+export function retainEnterpriseMealScene(candidate: ImportCandidate, evidence: ImportCandidate[]): ImportCandidate {
+  if(candidate.presetKey==='meituan_enterprise_meal')return candidate
+  const scene=evidence.find(item=>item.presetKey==='meituan_enterprise_meal')
+  if(!scene)return candidate
+  return {...candidate,presetKey:'meituan_enterprise_meal',kind:'expense',paymentMethod:'公司补贴',paymentMethodNeedsReview:false,offsetEnabled:true,offsetRatio:100,title:scene.merchant||scene.title||candidate.title,merchant:scene.merchant||candidate.merchant,categoryPath:scene.categoryPath,categoryKeyword:scene.categoryKeyword}
 }
 
 async function receiptHeaderImage(file: File, lines: Line[]): Promise<Blob | null> {
@@ -277,8 +288,10 @@ async function receiptHeaderImage(file: File, lines: Line[]): Promise<Blob | nul
     canvas.width = Math.round(width * 1.5); canvas.height = Math.round(height * 1.5)
     const context = canvas.getContext('2d')
     if (!context) return null
-    context.drawImage(bitmap.source, bitmap.width * 0.1, top, width, height, 0, 0, canvas.width, canvas.height)
-    return await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
+    paintOcrRegion(context,bitmap.source,bitmap.width*.1,top,width,height,0,0,canvas.width,canvas.height)
+    const blob=await new Promise<Blob|null>(resolve => canvas.toBlob(resolve, 'image/png'))
+    canvas.width=canvas.height=0
+    return blob
   } catch { return null }
   finally { bitmap?.close() }
 }
@@ -309,8 +322,10 @@ async function paymentFieldImage(file: File, lines: Line[]): Promise<Blob | null
     const context = canvas.getContext('2d')
     if (!context) return null
     context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height)
-    context.drawImage(image.source, left, top, right - left, bottom - top, padding, padding, (right - left) * scale, (bottom - top) * scale)
-    return await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
+    paintOcrRegion(context,image.source,left,top,right-left,bottom-top,padding,padding,(right-left)*scale,(bottom-top)*scale)
+    const blob=await new Promise<Blob|null>(resolve => canvas.toBlob(resolve, 'image/png'))
+    canvas.width=canvas.height=0
+    return blob
   } catch { return null }
   finally { image?.close() }
 }
@@ -326,13 +341,15 @@ async function receiptAmountImage(file: File, lines: Line[]): Promise<Blob | nul
     const scale=Math.min(2,Math.max(.5,48/Math.max(1,row.bbox.y1-row.bbox.y0)))
     const canvas=document.createElement('canvas');canvas.width=Math.round(width*scale);canvas.height=Math.round(height*scale)
     const context=canvas.getContext('2d',{willReadFrequently:true});if(!context)return null
-    context.drawImage(image.source,left,top,width,height,0,0,canvas.width,canvas.height)
+    paintOcrRegion(context,image.source,left,top,width,height,0,0,canvas.width,canvas.height)
     const pixels=context.getImageData(0,0,canvas.width,canvas.height),data=pixels.data
     const corners=[0,(canvas.width-1)*4,(canvas.height-1)*canvas.width*4,(canvas.width*canvas.height-1)*4]
     const dark=corners.reduce((sum,index)=>sum+(data[index]!+data[index+1]!+data[index+2]!)/3,0)/corners.length<128
     for(let index=0;index<data.length;index+=4){const gray=data[index]!*.299+data[index+1]!*.587+data[index+2]!*.114;const value=dark?255-gray:gray;data[index]=data[index+1]=data[index+2]=value}
     context.putImageData(pixels,0,0)
-    return await new Promise(resolve=>canvas.toBlob(resolve,'image/png'))
+    const blob=await new Promise<Blob|null>(resolve=>canvas.toBlob(resolve,'image/png'))
+    canvas.width=canvas.height=0
+    return blob
   } catch{return null}
   finally{image?.close()}
 }
@@ -347,7 +364,7 @@ async function refinePaymentField(file: File, lines: Line[], candidates: ImportC
   // mixed-language whole-page pass. The main worker has already been released.
   let worker: Awaited<ReturnType<typeof createWorker>> | undefined
   try {
-    worker = await createWorker('chi_tra', 1, {workerPath: `${assetBase}tesseract/worker.min.js`, corePath: `${assetBase}tesseract/tesseract-core-simd-lstm.wasm.js`, langPath: `${assetBase}tesseract/lang`})
+    worker = await createWorker('chi_tra', 1, ocrWorkerOptions(assetBase))
     await worker.setParameters({tessedit_pageseg_mode: PSM.SINGLE_LINE, preserve_interword_spaces: '0'})
     const result = await worker.recognize(image)
     const channel = normalizePaymentChannel(result.data.text)
@@ -362,19 +379,22 @@ async function refinePaymentField(file: File, lines: Line[], candidates: ImportC
 
 export async function recognizeImage(file: File, onProgress?: (progress: OcrProgress) => void): Promise<ImportCandidate[]> {
   const assetBase = import.meta.env.BASE_URL || '/'
+  const sourceSha256=await ocrFingerprint(file),sourceBytes=file.size
   const worker = await createWorker('chi_sim+eng', 1, {
-    workerPath: `${assetBase}tesseract/worker.min.js`,
-    corePath: `${assetBase}tesseract/tesseract-core-simd-lstm.wasm.js`,
-    langPath: `${assetBase}tesseract/lang`,
+    ...ocrWorkerOptions(assetBase),
     logger: event => onProgress?.({ status: event.status, progress: event.progress }),
   })
-  let candidates: ImportCandidate[] = [], receiptLines: Line[] = []
+  let candidates: ImportCandidate[] = [], receiptLines: Line[] = [],diagnostic:OcrDiagnostic|undefined
   try {
-    onProgress?.({ status: '正在增强图片清晰度', progress: 0 })
-    const enhanced = await makeEnhancedImage(file)
     onProgress?.({ status: '正在识别原图', progress: 0.08 })
     await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO, preserve_interword_spaces: '0' })
-    const originalResult = await worker.recognize(file, {}, { blocks: true })
+    const originalResult = await worker.recognize(file, {}, { blocks: true, imageColor: true })
+    file = canonicalOcrFile(originalResult.data.imageColor)
+    const normalized=await loadOcrImage(file)
+    try{diagnostic={revision:OCR_REVISION,modelCache:OCR_MODEL_CACHE,sourceSha256,normalizedSha256:await ocrFingerprint(file),sourceBytes,width:normalized.width,height:normalized.height,engine:originalResult.data.version}}
+    finally{normalized.close()}
+    onProgress?.({ status: '正在统一图片并增强清晰度', progress: .4 })
+    const enhanced = await makeEnhancedImage(file)
     receiptLines = (originalResult.data.blocks || []).flatMap(block => block.paragraphs.flatMap(paragraph => paragraph.lines))
     const originalCandidates = [parseReceiptText(originalResult.data.text)]
     let enhancedText = originalResult.data.text
@@ -414,8 +434,10 @@ export async function recognizeImage(file: File, onProgress?: (progress: OcrProg
         }
       }
     }
+    candidates=candidates.map(candidate=>retainEnterpriseMealScene(candidate,[...originalCandidates,...enhancedCandidates]))
   } finally { await worker.terminate() }
-  return await refinePaymentField(file, receiptLines, candidates, assetBase, onProgress)
+  const refined=await refinePaymentField(file, receiptLines, candidates, assetBase, onProgress)
+  return refined.map(candidate=>({...candidate,ocrDiagnostic:diagnostic}))
 }
 
 function candidateFromRow(row: Record<string, unknown>): ImportCandidate | null {
