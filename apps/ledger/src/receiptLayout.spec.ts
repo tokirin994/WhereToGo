@@ -37,4 +37,19 @@ describe('payment receipt layout regression',()=>{
     expect(parsed.amount).toBeUndefined()
     expect(parsed.originalAmount).toBe(17)
   })
+  it('recovers the paid amount from one signed Alipay discount when the header is absent',()=>{
+    const bill = '账单详情\n交易成功\n订单金额 8.00\n支付遇财神 -1.27\n付款方式 花呗'
+    expect(parseReceiptText(bill)).toMatchObject({amount:6.73,originalAmount:8,discountAmount:1.27,paymentMethod:'花呗'})
+    expect(parseReceiptText(bill.replace('交易成功', '-6.50\n交易成功')).amount).toBe(6.50)
+    expect(parseReceiptText(bill.replace('-1.27', '1.27')).amount).toBeUndefined()
+    expect(parseReceiptText(bill+'\n优惠 -0.25').amount).toBeUndefined()
+  })
+  it('recognizes a paid Meituan work meal when OCR omits the left-hand labels',()=>{
+    const bill = 'X企业版\n已支付\n¥18.25\n【开票信息】该订单为企业订单，发票由美团统一收取\n2025-06-07 12:13:14\n1234567890123456\n合成 餐馆(示例店)\n工作 餐'
+    expect(parseReceiptText(bill)).toMatchObject({
+      title:'合成餐馆(示例店)',merchant:'合成餐馆(示例店)',amount:18.25,
+      paymentMethod:'公司补贴',offsetEnabled:true,offsetRatio:100,
+    })
+    expect(parseReceiptText(bill.replace('工作 餐', '个人用餐')).offsetEnabled).toBeUndefined()
+  })
 })

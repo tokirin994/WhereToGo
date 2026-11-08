@@ -1,5 +1,5 @@
 /** Bump when the engine, trained data, or preprocessing contract changes. */
-export const OCR_REVISION = 'receipt-20261104-r4'
+export const OCR_REVISION = 'receipt-20261108-r5'
 export const OCR_MODEL_CACHE = 'smartledger-models-7-b8a23f10-45b4cb34-499c9924'
 
 export interface OcrDiagnostic {

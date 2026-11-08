@@ -5,7 +5,7 @@ import { normalizeOcrName, normalizeOcrText, parseCsv, readBillText } from './oc
 import { loadPdfJs, pdfOptions } from './pdfRuntime'
 import { parseAlipayDetail, isAlipayDetail } from './alipayReceipt'
 import { normalizePaymentChannel } from './paymentChannels'
-import { normalizeReceiptText, parseWeChatDetail, isWeChatDetail } from './receiptLayout'
+import { normalizeReceiptText, parseWeChatDetail, isWeChatDetail, meituanEnterpriseMerchantLine } from './receiptLayout'
 import { canonicalOcrFile, paintOcrRegion, ocrWorkerOptions, ocrFingerprint, OCR_REVISION, OCR_MODEL_CACHE, type OcrDiagnostic } from './ocrRuntime'
 
 export interface ImportCandidate extends Partial<Transaction> {
@@ -39,6 +39,11 @@ const amountFromLine = (line: string): number | null => {
   const nums = [...normalized.matchAll(/(?:^|[^\d])([+-]?\d{1,9}\.\d{1,2})(?:元)?(?:$|[^\d])/g)]
   const amount = nums.length ? Number(nums[nums.length - 1][1]) : NaN
   return Number.isFinite(amount) && amount > 0 ? amount : null
+}
+
+function normalizeEnterpriseMerchant(value: string): string {
+  const name = normalizeOcrName(value).replace(/^消费商家\s*[:：]?\s*/, '')
+  return name.replace(/\s*[《〈](?=[^《〈()]+\)$)/, '(')
 }
 
 const labelledPaymentAmount = (lines: string[]): { line: string; amount: number } | undefined => {
@@ -156,7 +161,8 @@ export function parseReceiptText(rawText: string): ImportCandidate {
   const currencyLines = lines.filter(line => /[¥￥$]\s*\d/.test(line) && !/\d{4}[年./-]\d{1,2}[月./-]\d{1,2}|订单号|交易单号|转账单号/.test(line))
   const fallbackAmountLine = currencyLines.at(-1) || lines.filter(line => /\d[\d,]*\.\d{1,2}/.test(line) && !/\d{4}[年./-]\d{1,2}[月./-]\d{1,2}|\d{1,2}:\d{2}|订单号|交易单号|转账单号/.test(line)).at(-1)
   const amount = wechat ? wechat.amount ?? null : alipay ? alipay.amount ?? null : labelledAmount?.amount ?? (signedLine ? amountFromLine(signedLine) : hasAmountLabel ? null : fallbackAmountLine ? parseAmount(fallbackAmountLine) ?? amountFromLine(fallbackAmountLine) : null)
-  const merchant = wechat ? wechat.merchant : alipay ? alipay.merchant : fieldValue(['消费商家','商户全称','商家','商户','收款方全称','收款方','店铺'])?.replace(/\s+-\s+.*$/, '').trim()
+  const enterpriseMerchantLine = lines[meituanEnterpriseMerchantLine(lines)]
+  const merchant = enterpriseMerchantLine ? normalizeEnterpriseMerchant(enterpriseMerchantLine) : (wechat ? wechat.merchant : alipay ? alipay.merchant : fieldValue(['消费商家','商户全称','商家','商户','收款方全称','收款方','店铺'])?.replace(/\s+-\s+.*$/, '').trim())
   const product = fieldValue(['商品名称','商品说明','商品','消费项目'])?.replace(/-美团.*$/, '').replace(/-美团App.*$/, '').trim()
   const signedAmount = signedLine?.match(/[−-]\s*[¥￥]?\s*([\d,]+\.\d{1,2})/)
   const explicitOut = /转出|支出|付款成功|付款金额|支付成功/.test(text) || Boolean(signedAmount)
@@ -181,7 +187,7 @@ export function parseReceiptText(rawText: string): ImportCandidate {
     [/医院|挂号|门诊/,['医疗健康','门诊']],[/药房|药店|买药/,['医疗健康','药品']],[/酒店|宾馆|民宿|住宿/,['休闲娱乐','酒店住宿']],
     [/工资|奖金|补贴/,['工资收入','基本工资']],[/退款|退回/,['其他收入','退款']],[/收款成功|转入|朋友转账/,['其他收入','礼金红包']]
   ]
-  const enterpriseMeal = /工作餐|企业订单|企业用餐/.test(text) && /消费商家|商家|商户/.test(text) && /订单时间|下单时间|支付时间/.test(text) && /消费记录详情|企业订单|大象|企业用餐|企业支付/.test(text)
+  const enterpriseMeal = Boolean(enterpriseMerchantLine) || (/工作餐|企业订单|企业用餐/.test(text) && /消费商家|商家|商户/.test(text) && /订单时间|下单时间|支付时间/.test(text) && /消费记录详情|企业订单|大象|企业用餐|企业支付/.test(text))
   const categoryPath = enterpriseMeal ? ['餐饮',happenedAt?mealCategory:'日常吃饭'] : categoryRules.find(([pattern])=>pattern.test(context))?.[1] || (/火锅|餐厅|餐饮|外卖|美团|饭|包子|汉堡|披萨|海底捞|餐|牛肉汤|麻辣烫|米粉|米线|面馆|面条|饺子|馄饨|烧烤|小吃|粥铺/.test(context)?['餐饮',mealCategory]:undefined)
   const confidence = Math.min(0.99, (amount != null ? (amountLine ? 0.48 : 0.36) : 0) + (happenedAt ? 0.2 : 0) + (merchant ? 0.18 : 0) + (paymentMethod ? 0.1 : 0) + (categoryPath ? 0.04 : 0))
   return { id: crypto.randomUUID(), title: normalizeOcrName(enterpriseMeal ? merchant || title : title), amount: amount ?? undefined, kind: enterpriseMeal?'expense':kind, happenedAt, merchant: merchant ? normalizeOcrName(merchant) : undefined, paymentMethod: enterpriseMeal?'公司补贴':paymentMethod ? normalizeOcrName(paymentMethod) : undefined, paymentMethodNeedsReview: alipay?.paymentMethodNeedsReview, confidence, rawText, details: enterpriseMeal?[{label:'识别场景',value:'大象 / 美团企业工作餐'},...details]:details, categoryPath, categoryKeyword: categoryPath?.[1], originalAmount, discountAmount, source: 'ocr', ...(enterpriseMeal?{presetKey:'meituan_enterprise_meal' as const,offsetEnabled:true,offsetRatio:100}:{}) }
@@ -354,6 +360,26 @@ async function receiptAmountImage(file: File, lines: Line[]): Promise<Blob | nul
   finally{image?.close()}
 }
 
+async function enterpriseMerchantImage(file: File, row: Line, targetHeight: number): Promise<Blob | null> {
+  const { x0, y0, x1, y1 } = row.bbox
+  const image = await loadOcrImage(file)
+  try {
+    const width = x1 - x0, height = y1 - y0
+    const scale = targetHeight / height, padding = 18
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.ceil(width * scale) + 2 * padding
+    canvas.height = Math.ceil(height * scale) + 2 * padding
+    const context = canvas.getContext('2d')
+    if (!context) return null
+    context.fillStyle = '#fff'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    paintOcrRegion(context, image.source, x0, y0, width, height, padding, padding, width * scale, height * scale)
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'))
+    canvas.width = canvas.height = 0
+    return blob
+  } finally { image.close() }
+}
+
 async function refinePaymentField(file: File, lines: Line[], candidates: ImportCandidate[], assetBase: string, onProgress?: (progress: OcrProgress) => void) {
   const candidate = candidates[0]
   if (!candidate?.paymentMethodNeedsReview) return candidates
@@ -435,6 +461,27 @@ export async function recognizeImage(file: File, onProgress?: (progress: OcrProg
       }
     }
     candidates=candidates.map(candidate=>retainEnterpriseMealScene(candidate,[...originalCandidates,...enhancedCandidates]))
+    const merchantRow = receiptLines[meituanEnterpriseMerchantLine(receiptLines.map(line => normalizeReceiptText(line.text)))]
+    const meal = candidates[0]
+    if (merchantRow && meal?.presetKey === 'meituan_enterprise_meal') {
+      try {
+        onProgress?.({ status: '正在核对企业餐商户', progress: 0.95 })
+        await worker.reinitialize('chi_sim', 1)
+        await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE })
+        const reads: string[] = []
+        for (const height of [40, 48]) {
+          const crop = await enterpriseMerchantImage(file, merchantRow, height)
+          if (!crop) break
+          const read = await worker.recognize(crop)
+          if (read.data.confidence < 65) break
+          reads.push(normalizeEnterpriseMerchant(read.data.text.trim()))
+        }
+        // Keep the whole-page result unless both line reads agree on the name.
+        if (reads[0] && reads[0] === reads[1] && /\p{Script=Han}/u.test(reads[0])) {
+          meal.title = meal.merchant = reads[0]
+        }
+      } catch { /* Keep the merchant read from the whole image. */ }
+    }
   } finally { await worker.terminate() }
   const refined=await refinePaymentField(file, receiptLines, candidates, assetBase, onProgress)
   return refined.map(candidate=>({...candidate,ocrDiagnostic:diagnostic}))

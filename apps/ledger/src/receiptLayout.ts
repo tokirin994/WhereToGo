@@ -12,6 +12,21 @@ export function normalizeReceiptText(value: string): string {
   }).join('\n')
 }
 
+export function meituanEnterpriseMerchantLine(lines: string[]): number {
+  // This screen has right-aligned values. OCR can omit its pale left-hand labels.
+  const invoice = lines.findIndex(line => /开票信息.*企业订单.*美团/.test(line))
+  if (invoice < 0 || !lines.slice(0, invoice).some(line => /已支付/.test(line))) return -1
+  const date = lines.findIndex((line, index) => index > invoice && /^(?:订单时间\s*[:：]?\s*)?20\d{2}-\d{1,2}-\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?$/.test(line))
+  if (date < 0) return -1
+  const order = lines.findIndex((line, index) => index > date && /^(?:订单编号\s*[:：]?\s*)?\d{12,}$/.test(line))
+  if (order < 0) return -1
+  const meal = lines.findIndex((line, index) => index > order && /^(?:业务场景\s*[:：]?\s*)?工作餐$/.test(line))
+  if (meal < 0) return -1
+  return lines.findIndex((line, index) => index > order && index < meal
+    && /\p{Script=Han}/u.test(line.replace(/^消费商家\s*[:：]?\s*/, ''))
+    && !/^(?:业务场景|支付方式|订单编号)/.test(line))
+}
+
 export function isWeChatDetail(lines: string[]): boolean {
   const text = lines.join('\n')
   return /转账时间|转账单号/.test(text) && /支付方式|付款方式/.test(text) && /当前状态|二维码付款|零钱明细/.test(text)

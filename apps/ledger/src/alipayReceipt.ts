@@ -48,9 +48,7 @@ export function parseAlipayDetail(lines: string[], happenedAt?: string): Partial
   let amountIndex = header.findIndex(line => moneyOnly.test(line) && /^[+\-¥￥$]/.test(line))
   if (amountIndex < 0) amountIndex = header.findIndex(line => /^\d[\d,]*\.\d{1,2}$/.test(line))
   const amountLine = amountIndex < 0 ? undefined : header[amountIndex]
-  // Order price is never evidence of actual payment, even if the benefit label
-  // was missed by OCR. Leave the amount empty when no payment was read.
-  const amount = money(amountLine) ?? ['实际支付金额', '实付金额', '实际支付', '实付款', '实付'].map(label => money(fields.get(label))).find(value => value != null)
+  const readPaidAmount = money(amountLine) ?? ['实际支付金额', '实付金额', '实际支付', '实付款', '实付'].map(label => money(fields.get(label))).find(value => value != null)
   const titleLines = header.slice(0, amountIndex < 0 ? header.length : amountIndex)
   const title = [...titleLines].reverse().find(line =>
     /[\p{Script=Han}]|[A-Za-z]{2}/u.test(line) && !/账单详情|交易详情|支付宝|交易成功|支付成功|已完成|收钱码收款|\d{1,2}:\d{2}|5G|4G|LTE/.test(line) && !promotion.test(line))
@@ -73,6 +71,14 @@ export function parseAlipayDetail(lines: string[], happenedAt?: string): Partial
   }
   const totalDiscount = discounts.find(item => /^(?:优惠|支付优惠|优惠金额|共优惠|已优惠)$/.test(item.label))
   const explicitDiscount = totalDiscount?.amount ?? (discounts.length ? Math.round(discounts.reduce((sum, item) => sum + item.amount, 0) * 100) / 100 : undefined)
+  // If the header was skipped, recover only the known single signed discount
+  // on a successful payment. An order price alone is never the paid amount.
+  const singleBenefit = discounts.length === 1 && discounts[0]?.label === '支付遇财神'
+    && discounts[0].value.startsWith('-') && lines.filter(line => benefit.test(line)).length === 1
+  const amount = readPaidAmount ?? (singleBenefit && originalAmount != null && explicitDiscount != null
+    && explicitDiscount > 0 && explicitDiscount < originalAmount && lines.includes('交易成功')
+    && !lines.some(line => /退款|部分支付/.test(line))
+    ? (Math.round(originalAmount * 100) - Math.round(explicitDiscount * 100)) / 100 : undefined)
   const difference = originalAmount != null && amount != null && originalAmount >= amount ? Math.round((originalAmount - amount) * 100) / 100 : undefined
   const discountAmount = difference != null && explicitDiscount != null && explicitDiscount > difference ? difference : explicitDiscount ?? difference
   const details: ImportCandidate['details'] = []
