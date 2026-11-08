@@ -2,6 +2,19 @@
   "name": "@personal/platform",
   "version": "1.0.0",
   "type": "module",
-  "exports": {".": "./src/applications.ts", "./http": "./src/http.ts", "./popover": "./src/popover.ts", "./PopoverDetails.vue": "./src/PopoverDetails.vue", "./AppSwitcher.vue": "./src/AppSwitcher.vue", "./ApplicationBoundary.vue": "./src/ApplicationBoundary.vue", "./async-page": "./src/asyncPage.ts", "./theme.css": "./src/theme.css", "./build": "./src/build.ts"},
-  "peerDependencies": {"vue": "^3.5.0", "@lucide/vue": "^1.57.0"}
+  "exports": {
+    ".": "./src/applications.ts",
+    "./http": "./src/http.ts",
+    "./popover": "./src/popover.ts",
+    "./PopoverDetails.vue": "./src/PopoverDetails.vue",
+    "./AppSwitcher.vue": "./src/AppSwitcher.vue",
+    "./ApplicationBoundary.vue": "./src/ApplicationBoundary.vue",
+    "./async-page": "./src/asyncPage.ts",
+    "./theme.css": "./src/theme.css",
+    "./build": "./src/build.ts"
+  },
+  "peerDependencies": {
+    "@lucide/vue": "^1.64.0",
+    "vue": "^3.5.0"
+  }
 }

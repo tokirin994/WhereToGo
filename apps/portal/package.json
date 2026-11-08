@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@lucide/vue": "^1.57.0",
+    "@lucide/vue": "^1.64.0",
     "oidc-client-ts": "^3.5.0",
     "vue": "^3.5.42",
     "@personal/identity": "file:../../packages/identity",
