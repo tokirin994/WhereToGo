@@ -3,7 +3,7 @@ import { createWorker, PSM, type Line } from 'tesseract.js'
 import type { FlowType, Transaction } from './ledger'
 import { normalizeOcrName, normalizeOcrText, parseCsv, readBillText } from './ocrText'
 import { loadPdfJs, pdfOptions } from './pdfRuntime'
-import { parseAlipayDetail, isAlipayDetail } from './alipayReceipt'
+import { parseAlipayDetail, isAlipayDetail, readAlipayHeader } from './alipayReceipt'
 import { normalizePaymentChannel } from './paymentChannels'
 import { normalizeReceiptText, parseWeChatDetail, isWeChatDetail, meituanEnterpriseLayout, isMeituanWorkMeal } from './receiptLayout'
 import { canonicalOcrFile, paintOcrRegion, ocrWorkerOptions, ocrFingerprint, OCR_REVISION, OCR_MODEL_CACHE, type OcrDiagnostic } from './ocrRuntime'
@@ -285,7 +285,8 @@ async function receiptHeaderImage(file: File, lines: Line[]): Promise<Blob | nul
   let bitmap: Awaited<ReturnType<typeof loadOcrImage>> | undefined
   try {
     bitmap = await loadOcrImage(file)
-    const title = lines.find(line => /账单|交易详情|零钱明细/.test(normalizeReceiptText(line.text)))
+    const titleBoundary = bitmap.height * .2
+    const title = lines.find(line => line.bbox.y1 < titleBoundary && /账单|交易详情|零钱明细/.test(normalizeReceiptText(line.text)))
     const field = lines.find(line => /^(?:当前状态|收款方备注|转账时间|订单金额|支付遇财神|支付时间|付款方式|支付方式|商品说明)/.test(normalizeReceiptText(line.text)))
     const top = title ? title.bbox.y1 + 8 : bitmap.height * 0.12
     const bottom = Math.min(field ? field.bbox.y0 - 12 : bitmap.height * 0.39, bitmap.height * 0.55)
@@ -432,23 +433,63 @@ export async function recognizeImage(file: File, onProgress?: (progress: OcrProg
     }
     const enhancedCandidates = [parseReceiptText(enhancedText)]
     candidates = candidateQuality(enhancedCandidates) >= candidateQuality(originalCandidates) ? enhancedCandidates : originalCandidates
+    const layouts = [originalResult.data.text, enhancedText].map(text => normalizeReceiptText(text).split('\n').filter(Boolean))
+    const wechatDetail = layouts.some(isWeChatDetail)
+    const [originalAlipay, enhancedAlipay] = layouts.map(isAlipayDetail)
+    const alipayDetail = !wechatDetail && (originalAlipay || enhancedAlipay)
+    const singleAlipayRead = alipayDetail && originalAlipay !== enhancedAlipay
+    if (singleAlipayRead) candidates = originalAlipay ? originalCandidates : enhancedCandidates
     // Large centered amounts can be missed by both whole-page layouts. Re-read
     // the header alone; do not substitute order price or an advertised discount.
-    if ([originalResult.data.text, enhancedText].some(text => isAlipayDetail(normalizeReceiptText(text).split('\n')) || isWeChatDetail(normalizeReceiptText(text).split('\n')))) {
+    if (alipayDetail || wechatDetail) {
       onProgress?.({ status: '正在核对账单顶部的实付金额', progress: 0.88 })
       const header = await receiptHeaderImage(file, receiptLines)
       if (header) {
         await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK })
         const result = await worker.recognize(header)
-        const headerText = normalizeOcrText(result.data.text).replace(/[−－—﹣‑]/g, '-')
+        const headerText = normalizeReceiptText(result.data.text)
         if (headerText.split('\n').some(line => /^[+\-]\s*[¥￥]?\s*\d[\d,]*(?:\.\d{1,2})?\s*$/.test(line))) {
           const original = [parseReceiptText(`${headerText}\n${originalResult.data.text}`)]
           const enhanced = [parseReceiptText(`${headerText}\n${enhancedText}`)]
-          candidates = candidateQuality(enhanced) > candidateQuality(original) ? enhanced : original
+          if (singleAlipayRead) candidates = originalAlipay ? original : enhanced
+          else candidates = candidateQuality(enhanced) > candidateQuality(original) ? enhanced : original
+        }
+        if (alipayDetail) {
+          const primary = readAlipayHeader(headerText.split('\n').filter(Boolean))
+          const current = candidates[0]!
+          const reads = [primary]
+          if ((!primary.title || (!primary.amount && !primary.status)) || (!primary.amount && !current.amount)) {
+            try {
+              await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_COLUMN })
+              const retry = await worker.recognize(header)
+              reads.push(readAlipayHeader(normalizeReceiptText(retry.data.text).split('\n').filter(Boolean)))
+            } catch { /* Keep the whole-page and first header reads. */ }
+          }
+          const title = reads.find(read => read.title && (read.amount || read.status))?.title
+          const fields = normalizeReceiptText(current.rawText).split('\n').filter(Boolean)
+          if (title && !readAlipayHeader(fields).title) {
+            current.title = normalizeOcrName(title)
+            if (!current.merchant || /\*/.test(current.merchant)) current.merchant = current.title
+          }
+          const paid = reads.find(read => read.amount)
+          if (!current.amount && paid?.amount) {
+            current.amount = paid.amount
+            current.kind = paid.amountLine?.startsWith('+') ? 'income' : current.kind
+            if (current.originalAmount != null && current.originalAmount > paid.amount) {
+              current.discountAmount ??= Math.round((current.originalAmount - paid.amount) * 100) / 100
+            }
+          }
+          if (!current.amount) {
+            const status = reads.find(read => read.status && read.status !== '退款成功')?.status
+            if (status) {
+              const recovered = parseAlipayDetail([status, ...fields], current.happenedAt)
+              current.amount = recovered?.amount
+            }
+          }
         }
       }
     }
-    if ([originalResult.data.text,enhancedText].some(text=>isWeChatDetail(normalizeReceiptText(text).split('\n')))) {
+    if (wechatDetail) {
       const amountImage=await receiptAmountImage(file,receiptLines)
       if(amountImage){
         onProgress?.({status:'正在校对微信账单实付金额',progress:.93})
@@ -477,32 +518,37 @@ export async function recognizeImage(file: File, onProgress?: (progress: OcrProg
           const merchant = merchantRow.bbox
           const step = merchant.y0 - order.y0
           if (step > merchant.y1 - merchant.y0 && Math.abs(step - (order.y0 - date.y0)) < step * .25) {
-            const scene = await enterpriseFieldImage(file, {
-              x0: Math.round(order.x1 * .7), x1: order.x1 + 12,
-              y0: merchant.y0 + step - 6, y1: merchant.y1 + step + 6,
-            }, 48)
-            if (scene) {
+            for (const { left, padding, height } of [{ left: .7, padding: 6, height: 48 }, { left: .8, padding: 16, height: 40 }]) {
+              const scene = await enterpriseFieldImage(file, {
+                x0: Math.round(order.x1 * left), x1: order.x1 + 12,
+                y0: merchant.y0 + step - padding, y1: merchant.y1 + step + padding,
+              }, height)
+              if (!scene) continue
               const read = await worker.recognize(scene)
               if (read.data.confidence >= 65 && isMeituanWorkMeal(normalizeReceiptText(read.data.text))) {
                 const receipt = receiptLines.map(line => line.text).slice(0, layout.merchant + 1).join('\n')
                 const corrected = parseReceiptText(receipt + '\n业务场景 工作餐')
                 const current = candidates[0]!
                 candidates[0] = retainEnterpriseMealScene(current, [corrected])
+                break
               }
             }
           }
         }
-        const reads: string[] = []
-        for (const height of [40, 48]) {
+        const reads = new Set<string>()
+        for (const height of [40, 48, 30, 34]) {
           const crop = await enterpriseFieldImage(file, merchantRow.bbox, height)
-          if (!crop) break
+          if (!crop) continue
           const read = await worker.recognize(crop)
-          if (read.data.confidence < 65) break
-          reads.push(normalizeEnterpriseMerchant(read.data.text.trim()))
-        }
-        // Keep the whole-page result unless both line reads agree on the name.
-        if (reads[0] && reads[0] === reads[1] && /\p{Script=Han}/u.test(reads[0])) {
-          candidates[0]!.title = candidates[0]!.merchant = reads[0]
+          const name = normalizeEnterpriseMerchant(read.data.text.trim())
+          if (read.data.confidence < 65 || !/\p{Script=Han}/u.test(name)) continue
+          // Smaller crops can help with compressed screenshots, but only use
+          // a name when two independent line reads agree.
+          if (reads.has(name)) {
+            candidates[0]!.title = candidates[0]!.merchant = name
+            break
+          }
+          reads.add(name)
         }
       } catch { /* Keep the merchant read from the whole image. */ }
     }

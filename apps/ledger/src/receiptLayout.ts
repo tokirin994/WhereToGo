@@ -20,9 +20,9 @@ export function meituanEnterpriseLayout(lines: string[]) {
   // This screen has right-aligned values. OCR can omit its pale left-hand labels.
   const invoice = lines.findIndex(line => /开票信息.*企业订单.*美团/.test(line))
   if (invoice < 0 || !lines.slice(0, invoice).some(line => /已支付/.test(line))) return
-  const date = lines.findIndex((line, index) => index > invoice && /^(?:订单时间\s*[:：]?\s*)?20\d{2}-\d{1,2}-\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?$/.test(line))
+  const date = lines.findIndex((line, index) => index > invoice && /^(?:订单时间\s*[:：]?\s*)?20\d{2}\s*[-/.]\s*\d{1,2}\s*[-/.]\s*\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?$/.test(line))
   if (date < 0) return
-  const order = lines.findIndex((line, index) => index > date && /^(?:订单编号\s*[:：]?\s*)?\d{12,}$/.test(line))
+  const order = lines.findIndex((line, index) => index > date && /^(?:订单编号[:：]?)?\d{12,32}$/.test(line.replace(/\s/g, '')))
   if (order < 0) return
   const merchant = lines.findIndex((line, index) => index > order && Boolean(line) && !/^消费商家\s*[:：]?$/.test(line))
   if (merchant < 0 || !/\p{Script=Han}/u.test(lines[merchant]!)

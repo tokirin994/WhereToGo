@@ -18,6 +18,18 @@ const money = (value: string | undefined): number | undefined => {
   return Number.isFinite(amount) ? amount : undefined
 }
 
+export function readAlipayHeader(lines: string[]) {
+  const firstField = lines.findIndex(line => Boolean(fieldLabel(line)) || benefit.test(line))
+  const header = lines.slice(0, firstField < 0 ? lines.length : firstField)
+  let amountIndex = header.findIndex(line => moneyOnly.test(line) && /^[+\-¥￥$]/.test(line))
+  if (amountIndex < 0) amountIndex = header.findIndex(line => /^\d[\d,]*\.\d{1,2}$/.test(line))
+  const amountLine = amountIndex < 0 ? undefined : header[amountIndex]
+  const title = header.slice(0, amountIndex < 0 ? header.length : amountIndex).reverse().find(line =>
+    /[\p{Script=Han}]|[A-Za-z]{2}/u.test(line) && !/账单详情|交易详情|支付宝|交易成功|支付成功|退款成功|已完成|收钱码收款|\d{1,2}:\d{2}|5G|4G|LTE/.test(line) && !promotion.test(line))
+  const status = header.find(line => /^(?:交易成功|支付成功|退款成功)$/.test(line))
+  return { amountLine, amount: money(amountLine), title, status }
+}
+
 export function isAlipayDetail(lines: string[]): boolean {
   const text = lines.join('\n')
   const fields = ['付款方式', '支付方式', '支付渠道', '商品说明', '收款方全称', '收款方全名', '支付遇财神'].filter(label => text.includes(label))
@@ -43,16 +55,10 @@ export function parseAlipayDetail(lines: string[], happenedAt?: string): Partial
     }
     index += group.length - 1
   }
-  const firstField = lines.findIndex(line => Boolean(fieldLabel(line)) || benefit.test(line))
-  const header = lines.slice(0, firstField < 0 ? lines.length : firstField)
-  let amountIndex = header.findIndex(line => moneyOnly.test(line) && /^[+\-¥￥$]/.test(line))
-  if (amountIndex < 0) amountIndex = header.findIndex(line => /^\d[\d,]*\.\d{1,2}$/.test(line))
-  const amountLine = amountIndex < 0 ? undefined : header[amountIndex]
-  const readPaidAmount = money(amountLine) ?? ['实际支付金额', '实付金额', '实际支付', '实付款', '实付'].map(label => money(fields.get(label))).find(value => value != null)
-  const titleLines = header.slice(0, amountIndex < 0 ? header.length : amountIndex)
-  const title = [...titleLines].reverse().find(line =>
-    /[\p{Script=Han}]|[A-Za-z]{2}/u.test(line) && !/账单详情|交易详情|支付宝|交易成功|支付成功|已完成|收钱码收款|\d{1,2}:\d{2}|5G|4G|LTE/.test(line) && !promotion.test(line))
-  const merchant = fields.get('收款方全称') || fields.get('收款方全名') || fields.get('商户全称') || title
+  const { amountLine, amount: headerAmount, title } = readAlipayHeader(lines)
+  const readPaidAmount = headerAmount ?? ['实际支付金额', '实付金额', '实际支付', '实付款', '实付'].map(label => money(fields.get(label))).find(value => value != null)
+  const payee = fields.get('收款方全称') || fields.get('收款方全名') || fields.get('商户全称')
+  const merchant = payee && !/\*/.test(payee) ? payee : title || payee
   const product = fields.get('商品名称') || fields.get('商品说明')
   const paymentMethod = fields.get('付款方式') || fields.get('支付方式') || fields.get('支付渠道')
   const normalizedPayment = normalizePaymentChannel(paymentMethod)
@@ -76,7 +82,7 @@ export function parseAlipayDetail(lines: string[], happenedAt?: string): Partial
   const singleBenefit = discounts.length === 1 && discounts[0]?.label === '支付遇财神'
     && discounts[0].value.startsWith('-') && lines.filter(line => benefit.test(line)).length === 1
   const amount = readPaidAmount ?? (singleBenefit && originalAmount != null && explicitDiscount != null
-    && explicitDiscount > 0 && explicitDiscount < originalAmount && lines.includes('交易成功')
+    && explicitDiscount > 0 && explicitDiscount < originalAmount && lines.some(line => /^(?:交易成功|支付成功)$/.test(line))
     && !lines.some(line => /退款|部分支付/.test(line))
     ? (Math.round(originalAmount * 100) - Math.round(explicitDiscount * 100)) / 100 : undefined)
   const difference = originalAmount != null && amount != null && originalAmount >= amount ? Math.round((originalAmount - amount) * 100) / 100 : undefined

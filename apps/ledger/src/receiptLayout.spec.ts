@@ -37,6 +37,10 @@ describe('payment receipt layout regression',()=>{
     expect(parsed.amount).toBeUndefined()
     expect(parsed.originalAmount).toBe(17)
   })
+  it('uses the displayed Alipay merchant instead of a masked personal payee',()=>{
+    const bill='账单详情\n合成餐馆\n-6.73\n交易成功\n订单金额 8.00\n收款方全称 **张(个人)\n付款方式 花呗'
+    expect(parseReceiptText(bill)).toMatchObject({title:'合成餐馆',merchant:'合成餐馆',amount:6.73})
+  })
   it('recovers the paid amount from one signed Alipay discount when the header is absent',()=>{
     const bill = '账单详情\n交易成功\n订单金额 8.00\n支付遇财神 -1.27\n付款方式 花呗'
     expect(parseReceiptText(bill)).toMatchObject({amount:6.73,originalAmount:8,discountAmount:1.27,paymentMethod:'花呗'})
@@ -51,5 +55,6 @@ describe('payment receipt layout regression',()=>{
       paymentMethod:'公司补贴',offsetEnabled:true,offsetRatio:100,
     })
     expect(parseReceiptText(bill.replace('工作 餐', '个人用餐')).offsetEnabled).toBeUndefined()
+    expect(parseReceiptText(bill.replace('2025-06-07', '2025 / 06 / 07').replace('1234567890123456', '12345678 90123456')).offsetRatio).toBe(100)
   })
 })
