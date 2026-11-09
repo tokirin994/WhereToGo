@@ -3,6 +3,7 @@ export interface ImportSource {
   id: string; file: File; name: string; url: string; kind: ImportSourceKind
   status: 'queued' | 'processing' | 'ready' | 'error'
   candidateCount: number; error: string
+  recognizedText?: string
 }
 export function importSourceKind(file: File): ImportSourceKind {
   const extension = file.name.split('.').pop()?.toLowerCase()

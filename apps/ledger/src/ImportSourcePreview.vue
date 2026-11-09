@@ -12,6 +12,13 @@ const dialog = ref<HTMLElement | null>(null), viewport = ref<HTMLElement | null>
 useDialogFocus(dialog)
 const loading = ref(false), rendering = ref(false), error = ref(''), zoom = ref(1), page = ref(1), pageCount = ref(0)
 const imageFit = ref<'page'|'width'>('page')
+const imageView = ref<'original'|'text'>('original')
+const copyStatus = ref('')
+const textStatus = computed(() => {
+  if (props.source.status === 'error') return '识别失败，可关闭预览后重试。'
+  if (props.source.status === 'ready') return '这张图片没有识别到可显示的文字。'
+  return '识别完成后，文字会显示在这里。'
+})
 const naturalWidth = ref(0), naturalHeight = ref(0), availableWidth = ref(800), availableHeight = ref(600)
 const tables = ref<Array<{ name: string; rows: string[][] }>>([]), sheetIndex = ref(0), tablePage = ref(0), textLines = ref<string[]>([])
 let generation = 0, renderGeneration = 0, pdf: PDFDocumentProxy | undefined, pdfTask: PDFDocumentLoadingTask | undefined, renderTask: RenderTask | undefined, observer: ResizeObserver | undefined
@@ -44,6 +51,16 @@ async function load() {
   }catch(cause){if(current===generation){error.value=cause instanceof Error?cause.message:'无法读取原始文件';if(props.source.kind==='pdf')stopPdf()}}
   finally{if(current===generation)loading.value=false}
 }
+async function copyRecognizedText() {
+  const text = props.source.recognizedText
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    copyStatus.value = '已复制识别文字'
+  } catch {
+    copyStatus.value = '复制失败，可选中文字后手动复制。'
+  }
+}
 async function renderPdf() {
   const document=pdf, target=canvas.value
   if(!document||!target)return
@@ -72,15 +89,24 @@ let drag:{id:number;x:number;y:number;left:number;top:number}|null=null
 function startPan(event:PointerEvent){if(zoom.value<=1||!viewport.value||event.button!==0)return;drag={id:event.pointerId,x:event.clientX,y:event.clientY,left:viewport.value.scrollLeft,top:viewport.value.scrollTop};viewport.value.setPointerCapture(event.pointerId)}
 function pan(event:PointerEvent){if(drag&&viewport.value){viewport.value.scrollLeft=drag.left-event.clientX+drag.x;viewport.value.scrollTop=drag.top-event.clientY+drag.y}}
 function stopPan(){drag=null}
-watch(()=>props.source.id,load,{immediate:true})
+watch(()=>props.source.id,()=>{
+  imageView.value='original';copyStatus.value=''
+  void load()
+},{immediate:true})
 watch([page,zoom,availableWidth],()=>{if(!loading.value)void renderPdf()})
-onMounted(()=>{if(viewport.value){observer=new ResizeObserver(entries=>{availableWidth.value=entries[0].contentRect.width;availableHeight.value=entries[0].contentRect.height});observer.observe(viewport.value)}})
+onMounted(()=>{if(viewport.value){observer=new ResizeObserver(([entry])=>{const {width,height}=entry.contentRect;if(width>0&&height>0){availableWidth.value=width;availableHeight.value=height}});observer.observe(viewport.value)}})
 onUnmounted(()=>{generation++;observer?.disconnect();stopPdf()})
 </script>
 <template>
   <div class="source-preview-shade" @click.self="emit('close')">
-    <section ref="dialog" class="source-preview" role="dialog" aria-modal="true" aria-labelledby="source-preview-title" tabindex="-1" @keydown="trapDialogTab($event,dialog)" @keydown.esc.stop.prevent="emit('close')">
+    <section ref="dialog" class="source-preview" :class="{'is-image-preview':source.kind==='image','is-text-view':source.kind==='image'&&imageView==='text'}" role="dialog" aria-modal="true" aria-labelledby="source-preview-title" tabindex="-1" @keydown="trapDialogTab($event,dialog)" @keydown.esc.stop.prevent="emit('close')">
       <header><span class="source-preview-file-icon"><UiIcon :name="source.kind==='image'?'image':'file'" :size="22"/></span><div><h2 id="source-preview-title">{{ source.name }}</h2><small>原始文件 · {{ formatFileSize(source.file.size) }}<template v-if="initialPage"> · 来源第 {{ initialPage }} 页</template><template v-if="initialRow"> · 来源第 {{ initialRow }} 行</template></small></div><a :href="source.url" :download="source.name" class="feature-icon-button" aria-label="下载原始文件" title="下载原始文件"><UiIcon name="download" :size="18"/></a><button type="button" class="feature-icon-button" aria-label="关闭原件预览" @click="emit('close')"><UiIcon name="close"/></button></header>
+      <div v-if="source.kind==='image'" class="source-preview-switch" role="group" aria-label="预览内容">
+        <button type="button" :aria-pressed="imageView==='original'" @click="imageView='original'"><UiIcon name="image" :size="17"/>原图</button>
+        <button type="button" :aria-pressed="imageView==='text'" @click="imageView='text'"><UiIcon name="scan" :size="17"/>识别文字</button>
+      </div>
+      <div class="source-preview-body">
+      <div class="source-preview-original">
       <div v-if="source.kind==='image'||source.kind==='pdf'" class="source-preview-tools"><div v-if="source.kind==='pdf'" class="preview-pagination"><button type="button" aria-label="上一页" :disabled="page<=1||loading" @click="page--"><UiIcon name="back" :size="16"/></button><span>第 {{ page }} / {{ pageCount||'—' }} 页</span><button type="button" aria-label="下一页" :disabled="page>=pageCount||loading" @click="page++"><UiIcon name="chevron" :size="16"/></button></div><div class="preview-zoom"><button v-if="source.kind==='image'" type="button" title="适合宽度，长截图可上下滚动" @click="fitWidth">适宽</button><button type="button" aria-label="缩小预览" :disabled="zoom<=.5" @click="changeZoom(-.25)"><UiIcon name="minus" :size="16"/></button><button type="button" class="preview-zoom-percentage" title="恢复适合窗口" @click="fitPage">{{ Math.round(zoom*100) }}%</button><button type="button" aria-label="放大预览" :disabled="zoom>=4" @click="changeZoom(.25)"><UiIcon name="plus" :size="16"/></button><button type="button" title="适合窗口" aria-label="适合窗口" @click="fitPage"><UiIcon name="expand" :size="16"/></button></div></div>
       <div v-if="source.kind==='table'&&tables.length" class="source-preview-tools"><label>工作表<select v-model="sheetIndex" @change="tablePage=0"><option v-for="(sheet,index) in tables" :key="index" :value="index">{{ sheet.name }}</option></select></label><span>{{ table.length }} 行</span></div>
       <div ref="viewport" class="source-preview-viewport" :class="{'is-document':source.kind==='table'||source.kind==='text','is-zoomed':zoom>1}" :style="{touchAction:zoom>1?'none':'auto'}" @pointerdown="startPan" @pointermove="pan" @pointerup="stopPan" @pointercancel="stopPan">
@@ -91,6 +117,22 @@ onUnmounted(()=>{generation++;observer?.disconnect();stopPdf()})
         <table v-if="source.kind==='table'&&!loading&&!error&&table.length" class="source-preview-table"><tbody><tr v-for="(row,index) in rows" :key="tablePage*100+index" :class="{highlight:tablePage*100+index+1===initialRow}"><th scope="row">{{ tablePage*100+index+1 }}</th><td v-for="(cell,column) in row" :key="column" :title="cell">{{ cell }}</td></tr></tbody></table>
         <pre v-else-if="source.kind==='text'&&!loading&&!error" class="source-text-preview">{{ textLines.slice(tablePage*100,(tablePage+1)*100).join('\n') }}</pre>
         <div v-else-if="source.kind==='unsupported'||(source.kind==='table'&&!loading&&!table.length&&!error)" class="preview-error"><UiIcon name="file" :size="30"/><b>{{ source.kind==='unsupported'?'此文件格式暂不支持内嵌预览':'文件里没有可显示的数据' }}</b><p>可以下载原始文件查看；支持图片、PDF、CSV、TXT 和 XLSX 预览。</p></div>
+      </div>
+      </div>
+      <section v-if="source.kind==='image'" class="source-preview-transcript" aria-labelledby="source-transcript-title">
+        <div class="source-transcript-heading">
+          <div>
+            <h3 id="source-transcript-title"><UiIcon name="scan" :size="17"/>识别文字</h3>
+            <p>按识别顺序显示，可能有错字或空格，请对照原图。</p>
+          </div>
+          <button v-if="source.recognizedText" type="button" class="feature-button source-transcript-copy" @click="copyRecognizedText">复制文字</button>
+        </div>
+        <div v-if="source.recognizedText" class="source-transcript-content" tabindex="0" role="region" aria-labelledby="source-transcript-title">
+          <pre>{{ source.recognizedText }}</pre>
+        </div>
+        <div v-else class="source-transcript-empty" role="status"><UiIcon name="scan" :size="28"/><p>{{ textStatus }}</p></div>
+        <p v-if="copyStatus" class="source-transcript-status" role="status">{{ copyStatus }}</p>
+      </section>
       </div>
       <footer><span>{{ source.kind==='image'?'双击缩放，放大后可拖动查看细节':source.kind==='pdf'?'逐页核对原件，识别记录保留来源页码':'显示原始文件内容，不会修改文件' }}</span><div v-if="(source.kind==='table'&&table.length)||(source.kind==='text'&&textLines.length)" class="preview-pagination"><button type="button" aria-label="上一组行" :disabled="tablePage===0" @click="tablePage--"><UiIcon name="back" :size="15"/></button><span>{{ tablePage*100+1 }}–{{ Math.min((tablePage+1)*100,source.kind==='table'?table.length:textLines.length) }} 行</span><button type="button" aria-label="下一组行" :disabled="(tablePage+1)*100>=(source.kind==='table'?table.length:textLines.length)" @click="tablePage++"><UiIcon name="chevron" :size="15"/></button></div></footer>
     </section>

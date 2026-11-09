@@ -447,6 +447,7 @@ async function processImportSources(ids:string[]){
         addedCategoryIds=snapshot.value.categories.filter(category=>!existingCategories.has(category.id)).map(category=>category.id)
         if(addedCategoryIds.length)await persist()
         if(!importSessionAlive)return
+        if(source.kind==='image')source.recognizedText=rows[0]?.rawText.trim()
         candidates.value.push(...rows);selectedCandidateIds.value.push(...rows.map(item=>item.id));source.candidateCount=rows.length;source.status='ready'
       }catch(cause){snapshot.value.categories=snapshot.value.categories.filter(category=>!addedCategoryIds.includes(category.id));if(!importSessionAlive)return;source.status='error';source.error=cause instanceof Error?cause.message:'识别失败，请预览原件后重试'}
     }
