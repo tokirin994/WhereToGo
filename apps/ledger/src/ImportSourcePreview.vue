@@ -5,6 +5,7 @@ import { formatFileSize, type ImportSource } from './importSources'
 import { parseCsv, readBillText } from './ocrText'
 import { loadPdfJs, pdfOptions } from './pdfRuntime'
 import { trapDialogTab, useDialogFocus } from './dialogFocus'
+import { money } from './ledgerViewModels'
 import UiIcon from './UiIcon.vue'
 const props = defineProps<{ source: ImportSource; initialPage?: number; initialRow?: number; initialSheet?: string }>()
 const emit = defineEmits<{ close: [] }>()
@@ -14,6 +15,19 @@ const loading = ref(false), rendering = ref(false), error = ref(''), zoom = ref(
 const imageFit = ref<'page'|'width'>('page')
 const imageView = ref<'original'|'text'>('original')
 const copyStatus = ref('')
+const rawText = computed(() => props.source.recognizedResult?.rawText.trim() || '')
+const recognizedFields = computed(() => {
+  const result = props.source.recognizedResult
+  if (!result) return []
+  const date = result.happenedAt ? new Date(result.happenedAt) : null
+  return [
+    { label: result.merchant ? '商户' : '流水名称', value: result.merchant || result.title },
+    { label: result.kind === 'income' ? '收入金额' : '实付金额', value: result.amount ? money(result.amount) : undefined },
+    { label: '订单时间', value: date?.toLocaleString('zh-CN', { hour12: false }) },
+    { label: '支付渠道', value: result.paymentMethod },
+    ...(result.offsetEnabled ? [{ label: '抵扣比例', value: `${result.offsetRatio ?? 100}%` }] : []),
+  ]
+})
 const textStatus = computed(() => {
   if (props.source.status === 'error') return '识别失败，可关闭预览后重试。'
   if (props.source.status === 'ready') return '这张图片没有识别到可显示的文字。'
@@ -52,7 +66,7 @@ async function load() {
   finally{if(current===generation)loading.value=false}
 }
 async function copyRecognizedText() {
-  const text = props.source.recognizedText
+  const text = rawText.value
   if (!text) return
   try {
     await navigator.clipboard.writeText(text)
@@ -103,7 +117,7 @@ onUnmounted(()=>{generation++;observer?.disconnect();stopPdf()})
       <header><span class="source-preview-file-icon"><UiIcon :name="source.kind==='image'?'image':'file'" :size="22"/></span><div><h2 id="source-preview-title">{{ source.name }}</h2><small>原始文件 · {{ formatFileSize(source.file.size) }}<template v-if="initialPage"> · 来源第 {{ initialPage }} 页</template><template v-if="initialRow"> · 来源第 {{ initialRow }} 行</template></small></div><a :href="source.url" :download="source.name" class="feature-icon-button" aria-label="下载原始文件" title="下载原始文件"><UiIcon name="download" :size="18"/></a><button type="button" class="feature-icon-button" aria-label="关闭原件预览" @click="emit('close')"><UiIcon name="close"/></button></header>
       <div v-if="source.kind==='image'" class="source-preview-switch" role="group" aria-label="预览内容">
         <button type="button" :aria-pressed="imageView==='original'" @click="imageView='original'"><UiIcon name="image" :size="17"/>原图</button>
-        <button type="button" :aria-pressed="imageView==='text'" @click="imageView='text'"><UiIcon name="scan" :size="17"/>识别文字</button>
+        <button type="button" :aria-pressed="imageView==='text'" @click="imageView='text'"><UiIcon name="scan" :size="17"/>识别结果</button>
       </div>
       <div class="source-preview-body">
       <div class="source-preview-original">
@@ -122,16 +136,25 @@ onUnmounted(()=>{generation++;observer?.disconnect();stopPdf()})
       <section v-if="source.kind==='image'" class="source-preview-transcript" aria-labelledby="source-transcript-title">
         <div class="source-transcript-heading">
           <div>
-            <h3 id="source-transcript-title"><UiIcon name="scan" :size="17"/>识别文字</h3>
-            <p>按识别顺序显示，可能有错字或空格，请对照原图。</p>
+            <h3 id="source-transcript-title"><UiIcon name="scan" :size="17"/>识别结果</h3>
+            <p>这里显示字段校正后的识别结果，入账前请对照原图。</p>
           </div>
-          <button v-if="source.recognizedText" type="button" class="feature-button source-transcript-copy" @click="copyRecognizedText">复制文字</button>
         </div>
-        <div v-if="source.recognizedText" class="source-transcript-content" tabindex="0" role="region" aria-labelledby="source-transcript-title">
-          <pre>{{ source.recognizedText }}</pre>
+        <div v-if="recognizedFields.length" class="source-transcript-content" tabindex="0" role="region" aria-labelledby="source-transcript-title">
+          <dl class="source-transcript-fields">
+            <div v-for="field in recognizedFields" :key="field.label">
+              <dt>{{ field.label }}</dt><dd :class="{'needs-review':!field.value}">{{ field.value || '待核对' }}</dd>
+            </div>
+          </dl>
+          <details v-if="rawText" class="source-transcript-raw">
+            <summary tabindex="0">原始识别文字</summary>
+            <p>这是整页 OCR 的原始输出，可能包含误读。</p>
+            <button type="button" class="feature-button source-transcript-copy" @click="copyRecognizedText">复制原始文字</button>
+            <p v-if="copyStatus" class="source-transcript-status" role="status">{{ copyStatus }}</p>
+            <pre>{{ rawText }}</pre>
+          </details>
         </div>
         <div v-else class="source-transcript-empty" role="status"><UiIcon name="scan" :size="28"/><p>{{ textStatus }}</p></div>
-        <p v-if="copyStatus" class="source-transcript-status" role="status">{{ copyStatus }}</p>
       </section>
       </div>
       <footer><span>{{ source.kind==='image'?'双击缩放，放大后可拖动查看细节':source.kind==='pdf'?'逐页核对原件，识别记录保留来源页码':'显示原始文件内容，不会修改文件' }}</span><div v-if="(source.kind==='table'&&table.length)||(source.kind==='text'&&textLines.length)" class="preview-pagination"><button type="button" aria-label="上一组行" :disabled="tablePage===0" @click="tablePage--"><UiIcon name="back" :size="15"/></button><span>{{ tablePage*100+1 }}–{{ Math.min((tablePage+1)*100,source.kind==='table'?table.length:textLines.length) }} 行</span><button type="button" aria-label="下一组行" :disabled="(tablePage+1)*100>=(source.kind==='table'?table.length:textLines.length)" @click="tablePage++"><UiIcon name="chevron" :size="15"/></button></div></footer>

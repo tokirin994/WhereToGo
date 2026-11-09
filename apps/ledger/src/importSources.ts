@@ -1,9 +1,11 @@
+import type { ImportCandidate } from './importers'
+
 export type ImportSourceKind = 'image' | 'pdf' | 'table' | 'text' | 'unsupported'
 export interface ImportSource {
   id: string; file: File; name: string; url: string; kind: ImportSourceKind
   status: 'queued' | 'processing' | 'ready' | 'error'
   candidateCount: number; error: string
-  recognizedText?: string
+  recognizedResult?: Pick<ImportCandidate, 'title' | 'merchant' | 'amount' | 'happenedAt' | 'paymentMethod' | 'offsetEnabled' | 'offsetRatio' | 'kind' | 'rawText'>
 }
 export function importSourceKind(file: File): ImportSourceKind {
   const extension = file.name.split('.').pop()?.toLowerCase()
