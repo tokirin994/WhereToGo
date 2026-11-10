@@ -58,6 +58,19 @@ export function suggestImportCategory(item: ImportCandidate, snapshot: LedgerSna
   return best&&best.score>=15?{category:best.category,reason:'按分类名称与近似路径匹配'}:null
 }
 
+export function findCompanySubsidyCategory(snapshot: LedgerSnapshot) {
+  const income = snapshot.categories.filter(category => category.flowType === 'income')
+  return income.find(category => category.name === '公司补贴') || income.find(category => /补贴|餐补/.test(category.name))
+}
+
+export function ensureCompanySubsidyCategory(snapshot: LedgerSnapshot) {
+  const existing = findCompanySubsidyCategory(snapshot)
+  if (existing) return existing
+  const category: Category = {id:crypto.randomUUID(),name:'公司补贴',flowType:'income',icon:'wallet',color:'#3aae6d',parentId:null,sortOrder:snapshot.categories.length}
+  snapshot.categories.push(category)
+  return category
+}
+
 /** Only called for fresh recognition; saved user edits are never overwritten. */
 export function applyImportDefaults(item: ImportCandidate, snapshot: LedgerSnapshot) {
   if(!item.categoryId){
@@ -66,11 +79,5 @@ export function applyImportDefaults(item: ImportCandidate, snapshot: LedgerSnaps
   }
   if(item.presetKey!=='meituan_enterprise_meal')return
   item.kind='expense';item.paymentMethod='公司补贴';item.offsetEnabled=true;item.offsetRatio=100
-  const income=snapshot.categories.filter(category=>category.flowType==='income')
-  let subsidy=income.find(category=>category.name==='公司补贴')||income.find(category=>/补贴|餐补/.test(category.name))
-  if(!subsidy){
-    subsidy={id:crypto.randomUUID(),name:'公司补贴',flowType:'income',icon:'wallet',color:'#3aae6d',parentId:null,sortOrder:snapshot.categories.length}
-    snapshot.categories.push(subsidy)
-  }
-  item.offsetCategoryId=subsidy.id
+  item.offsetCategoryId=ensureCompanySubsidyCategory(snapshot).id
 }

@@ -15,6 +15,6 @@ export function normalizePaymentChannel(value?: string): string | undefined {
   if (/云闪付/.test(text)) return '云闪付'
   if (/微信支付/.test(text)) return '微信支付'
   if (/数字人民币/.test(text)) return '数字人民币'
-  if (/^(?:余额|零钱通|零钱|支付宝|银联|现金|先用后付|芝麻信用)$/.test(text)) return text
+  if (/^(?:余额|零钱通|零钱|支付宝|银联|现金|先用后付|芝麻信用|公司补贴)$/.test(text)) return text
   return undefined
 }

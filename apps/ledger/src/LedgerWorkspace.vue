@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { User } from 'oidc-client-ts'
 import { parseBillFile, type ImportCandidate, type OcrProgress } from './importers'
 import { normalizeOcrName } from './ocrText'
-import { applyImportDefaults } from './importDefaults'
+import { applyImportDefaults, ensureCompanySubsidyCategory } from './importDefaults'
 import { downloadBookExport, type BookExportFormat } from './bookExport'
 import { createImportSource, type ImportSource } from './importSources'
 import { chooseLocalAfterConflict, chooseRemoteAfterConflict, fingerprint, getRemoteSnapshot, pushSnapshot, smartSync, type SyncConflict } from './cloudSync'
@@ -29,6 +29,7 @@ import OcrImportWorkbench from './OcrImportWorkbench.vue'
 import OcrCandidateEditor from './OcrCandidateEditor.vue'
 import ImportSourcePreview from './ImportSourcePreview.vue'
 import PaymentChannelSettings from './PaymentChannelSettings.vue'
+import PaymentChannelPicker from './PaymentChannelPicker.vue'
 import AppSwitcher from './AppSwitcher.vue'
 import ApiSecurityPanel from './ApiSecurityPanel.vue'
 import { portalUrl, travelUrl, appBasePath, ledgerOnly } from './appLinks'
@@ -496,25 +497,39 @@ async function saveCandidate(candidate:ImportCandidate,dateInput=candidate.happe
   if(savingCandidates.value.size||savingEntry.value)return false
   savingCandidates.value.add(candidate.id);candidateError.value=''
   let previousTransactions:Transaction[]|null=null
+  let previousChannels:string[]|null=null
+  let previousCategories:Category[]|null=null
   try{
     const occurredAt=dateInput?new Date(dateInput):candidate.happenedAt?new Date(candidate.happenedAt):null
     if(!occurredAt||Number.isNaN(occurredAt.getTime()))throw new Error('请对照原件补全订单日期时间后再入账')
     if(!candidate.title?.trim()||!Number.isFinite(candidate.amount)||Number(candidate.amount)<=0)throw new Error('请补全流水名称和大于 0 的金额')
-    if(candidate.offsetEnabled&&(candidate.kind==='income'||!snapshot.value.categories.some(category=>category.id===candidate.offsetCategoryId&&category.flowType==='income')||!Number.isFinite(candidate.offsetRatio)||Number(candidate.offsetRatio)<=0||Number(candidate.offsetRatio)>100))throw new Error('请选择有效的报销或退款分类，并核对抵扣比例')
+    let offsetCategoryId=candidate.offsetCategoryId
+    const useCompanySubsidy=candidate.enterpriseMealNeedsReview&&candidate.paymentMethod==='公司补贴'&&!offsetCategoryId
+    if(candidate.offsetEnabled){
+      if(candidate.kind==='income'||!Number.isFinite(candidate.offsetRatio)||Number(candidate.offsetRatio)<=0||Number(candidate.offsetRatio)>100)throw new Error('请核对抵扣比例及流水类型')
+      if(useCompanySubsidy){
+        previousCategories=[...snapshot.value.categories]
+        offsetCategoryId=ensureCompanySubsidyCategory(snapshot.value).id
+      }
+      if(!snapshot.value.categories.some(category=>category.id===offsetCategoryId&&category.flowType==='income'))throw new Error('请选择有效的报销或退款分类')
+    }
     const months=candidate.installmentMonths||1
     const start=localDay(candidate.installmentStartMonth||candidate.happenedAt||new Date())
     const books=candidate.bookIds??(selectedBook.value?[selectedBook.value.id]:[])
     const explicit=candidate.hasExplicitBookSelection??Boolean(candidate.bookIds!==undefined||selectedBook.value)
     const created=createTransaction(snapshot.value,{title:candidate.title.trim(),amount:Number(candidate.amount),kind:candidate.kind||'expense',happenedAt:occurredAt.toISOString(),categoryId:candidate.categoryId||null,bookIds:books,hasExplicitBookSelection:explicit,ledgerSplitSettings:candidate.ledgerSplitSettings,paymentMethod:candidate.paymentMethod||'',merchant:candidate.merchant||'',note:candidate.note||'',installmentMonths:months,installmentStartMonth:months>1?new Date(start+'T00:00:00').toISOString():null,originalAmount:candidate.originalAmount??null,discountAmount:candidate.discountAmount??null,premiumAmount:candidate.premiumAmount??null,paidByParticipantId:candidate.paidByParticipantId||null,splitParticipantIds:candidate.splitParticipantIds||[],splitMode:candidate.splitMode||'equal',splitRatio:candidate.splitRatio??null,splitAmount:candidate.splitAmount??null,source:'ocr'})
     previousTransactions=JSON.parse(JSON.stringify(snapshot.value.transactions))
+    previousChannels=[...snapshot.value.settings.paymentChannels]
     snapshot.value.transactions.unshift(...created)
-    if(candidate.offsetEnabled&&created[0])syncOffset(created[0],true,candidate.offsetCategoryId||'',candidate.offsetRatio||100)
+    if(candidate.offsetEnabled&&created[0])syncOffset(created[0],true,offsetCategoryId||'',candidate.offsetRatio||100)
     if(candidate.paymentMethod&&!snapshot.value.settings.paymentChannels.includes(candidate.paymentMethod))snapshot.value.settings.paymentChannels.push(candidate.paymentMethod)
     await persist();candidates.value=candidates.value.filter(item=>item.id!==candidate.id);selectedCandidateIds.value=selectedCandidateIds.value.filter(id=>id!==candidate.id)
     if(candidateDraft.value?.id===candidate.id)candidateDraft.value=null
     notify('已确认并记入流水');return true
   }catch(cause){
     if(previousTransactions)snapshot.value.transactions=previousTransactions
+    if(previousChannels)snapshot.value.settings.paymentChannels=previousChannels
+    if(previousCategories)snapshot.value.categories=previousCategories
     const message=cause instanceof Error?cause.message:'确认入账失败'
     if(candidateDraft.value?.id!==candidate.id)openCandidateEditor(candidate)
     candidateError.value=message;return false
@@ -577,7 +592,7 @@ watch(()=>[snapshot.value.settings.cloudSyncEnabled,snapshot.value.settings.midn
         <form class="entry-editor feature-form" @submit.prevent="saveEntry">
           <header class="feature-form-header"><div><span class="home-eyebrow">{{ editingId?'EDIT TRANSACTION':'NEW TRANSACTION' }}</span><h2>{{ editingId?'修改流水':'记录这一笔' }}</h2><p>整理账本、分类与分期，让每笔收支清清楚楚</p></div><button type="button" class="feature-icon-button" aria-label="关闭记账" @click="cancelEntry"><UiIcon name="close"/></button></header>
           <div v-if="entryOpen" class="entry-form-body">
-            <section class="feature-section entry-basic"><div class="feature-fields"><label>收支类型<select v-model="entryDraft.kind"><option value="expense">支出</option><option value="income">收入</option></select></label><label>金额<input v-model="entryDraft.amount" type="number" min="0.01" step="0.01" required placeholder="0.00"/></label><label>名称<input v-model.trim="entryDraft.title" required maxlength="240" placeholder="这笔钱用在了哪里？"/></label><label>时间<input v-model="entryDraft.happenedAt" type="datetime-local" required @input="entryLinkedSource&&(entryOffsetDateMode='independent')"/><span v-if="entryLinkedSource" class="offset-date-follow"><input type="checkbox" :checked="entryOffsetDateMode==='source'" @change="setEntryOffsetDateFollow"/>日期跟随原支出</span></label><CategoryPicker v-model="entryDraft.categoryId" title="分类" placeholder="未分类" :allow-unassigned="true" :categories="flatCategories" :flow-type="entryDraft.kind" :appearance-mode="snapshot.settings.appearanceMode"/><label>支付渠道<input v-model.trim="entryDraft.paymentMethod" list="payment-channels" placeholder="微信、支付宝、银行卡…"/><datalist id="payment-channels"><option v-for="channel in snapshot.settings.paymentChannels" :key="channel" :value="channel"/></datalist></label></div></section>
+            <section class="feature-section entry-basic"><div class="feature-fields"><label>收支类型<select v-model="entryDraft.kind"><option value="expense">支出</option><option value="income">收入</option></select></label><label>金额<input v-model="entryDraft.amount" type="number" min="0.01" step="0.01" required placeholder="0.00"/></label><label>名称<input v-model.trim="entryDraft.title" required maxlength="240" placeholder="这笔钱用在了哪里？"/></label><label>时间<input v-model="entryDraft.happenedAt" type="datetime-local" required @input="entryLinkedSource&&(entryOffsetDateMode='independent')"/><span v-if="entryLinkedSource" class="offset-date-follow"><input type="checkbox" :checked="entryOffsetDateMode==='source'" @change="setEntryOffsetDateFollow"/>日期跟随原支出</span></label><CategoryPicker v-model="entryDraft.categoryId" title="分类" placeholder="未分类" :allow-unassigned="true" :categories="flatCategories" :flow-type="entryDraft.kind" :appearance-mode="snapshot.settings.appearanceMode"/><PaymentChannelPicker v-model="entryDraft.paymentMethod" :channels="snapshot.settings.paymentChannels" :disabled="savingEntry"/></div></section>
             <BookAssignmentPicker v-model="entryDraft.bookIds" v-model:explicit="entryExplicitBooks" v-model:split-settings="entrySplitSettings" :snapshot="snapshot" :happened-at="entryDraft.happenedAt" :category-id="entryDraft.categoryId||null" :kind="entryDraft.kind" :editing="Boolean(editingId)"/>
             <InstallmentControls v-model:enabled="entryInstallmentEnabled" :months="Number(entryDraft.installmentMonths)||2" @update:months="entryDraft.installmentMonths=String($event)" v-model:start-date="entryInstallmentStartDate" :amount="Number(entryDraft.amount)" :existing="Boolean(editingTransaction?.installmentGroupId)" :index="editingTransaction?.installmentIndex" :original-total="editingTransaction?.installmentOriginalTotal" @update:enabled="($event) => { if($event&&Number(entryDraft.installmentMonths)<2)entryDraft.installmentMonths='2' }" @cancel="manageInstallment('cancel')" @payoff="manageInstallment('payoff')"/>
             <OffsetManager v-if="entryDraft.kind==='expense'" ref="entryOffsetManager" :enabled="entryDraft.offsetEnabled" @update:enabled="setEntryOffsetsEnabled" v-model:edits="entryOffsetEdits" v-model:drafts="entryOffsetDrafts" :existing="entryExistingOffsets" :amount="Number(entryDraft.amount)" :source-date="entryDraft.happenedAt" :editing="Boolean(editingId)" :categories="flatCategories" :appearance-mode="snapshot.settings.appearanceMode" :disabled="savingEntry" @clear="entryClearOffsetIds=$event"/>

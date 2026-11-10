@@ -5,13 +5,13 @@ import { normalizeOcrName, normalizeOcrText, parseCsv, readBillText } from './oc
 import { loadPdfJs, pdfOptions } from './pdfRuntime'
 import { parseAlipayDetail, isAlipayDetail, readAlipayHeader } from './alipayReceipt'
 import { normalizePaymentChannel } from './paymentChannels'
-import { normalizeReceiptText, parseWeChatDetail, isWeChatDetail, meituanEnterpriseLayout, isMeituanWorkMeal } from './receiptLayout'
+import { normalizeReceiptText, parseWeChatDetail, isWeChatDetail, meituanEnterpriseLayout, isMeituanWorkMeal, isPaidMeituanEnterpriseReceipt } from './receiptLayout'
 import { canonicalOcrFile, paintOcrRegion, ocrWorkerOptions, ocrFingerprint, OCR_REVISION, OCR_MODEL_CACHE, type OcrDiagnostic } from './ocrRuntime'
 
 export interface ImportCandidate extends Partial<Transaction> {
   id: string; confidence: number; rawText: string; details: Array<{ label: string; value: string }>
   categoryPath?: string[]; categoryKeyword?: string; suggestedSource?: string
-  presetKey?: 'meituan_enterprise_meal'; categorySuggestion?: string
+  presetKey?: 'meituan_enterprise_meal'; enterpriseMealNeedsReview?: boolean; categorySuggestion?: string
   happenedAtLocal?: string
   hasExplicitBookSelection?: boolean
   sourceId?: string; sourceName?: string; sourcePage?: number; sourceRow?: number; sourceSheet?: string
@@ -188,10 +188,13 @@ export function parseReceiptText(rawText: string): ImportCandidate {
     [/医院|挂号|门诊/,['医疗健康','门诊']],[/药房|药店|买药/,['医疗健康','药品']],[/酒店|宾馆|民宿|住宿/,['休闲娱乐','酒店住宿']],
     [/工资|奖金|补贴/,['工资收入','基本工资']],[/退款|退回/,['其他收入','退款']],[/收款成功|转入|朋友转账/,['其他收入','礼金红包']]
   ]
-  const enterpriseMeal = enterpriseLayout ? enterpriseLayout.workMeal : (/工作餐|企业订单|企业用餐/.test(text) && /消费商家|商家|商户/.test(text) && /订单时间|下单时间|支付时间/.test(text) && /消费记录详情|企业订单|大象|企业用餐|企业支付/.test(text))
+  const enterpriseReceipt = isPaidMeituanEnterpriseReceipt(lines)
+  const enterpriseMeal = (enterpriseReceipt && lines.some(isMeituanWorkMeal))
+    || (lines.some(line => isMeituanWorkMeal(line) || /^(?:业务场景\s*[:：]?\s*)?企业用餐$/.test(line))
+      && /消费商家|商家|商户/.test(text) && /订单时间|下单时间|支付时间/.test(text) && /消费记录详情|企业订单|大象|企业用餐|企业支付/.test(text))
   const categoryPath = enterpriseMeal ? ['餐饮',happenedAt?mealCategory:'日常吃饭'] : categoryRules.find(([pattern])=>pattern.test(context))?.[1] || (/火锅|餐厅|餐饮|外卖|美团|饭|包子|汉堡|披萨|海底捞|餐|牛肉汤|麻辣烫|米粉|米线|面馆|面条|饺子|馄饨|烧烤|小吃|粥铺/.test(context)?['餐饮',mealCategory]:undefined)
   const confidence = Math.min(0.99, (amount != null ? (amountLine ? 0.48 : 0.36) : 0) + (happenedAt ? 0.2 : 0) + (merchant ? 0.18 : 0) + (paymentMethod ? 0.1 : 0) + (categoryPath ? 0.04 : 0))
-  return { id: crypto.randomUUID(), title: normalizeOcrName(enterpriseMeal || enterpriseLayout ? merchant || title : title), amount: amount ?? undefined, kind: enterpriseMeal?'expense':kind, happenedAt, merchant: merchant ? normalizeOcrName(merchant) : undefined, paymentMethod: enterpriseMeal?'公司补贴':paymentMethod ? normalizeOcrName(paymentMethod) : undefined, paymentMethodNeedsReview: alipay?.paymentMethodNeedsReview, confidence, rawText, details: enterpriseMeal?[{label:'识别场景',value:'大象 / 美团企业工作餐'},...details]:details, categoryPath, categoryKeyword: categoryPath?.[1], originalAmount, discountAmount, source: 'ocr', ...(enterpriseMeal?{presetKey:'meituan_enterprise_meal' as const,offsetEnabled:true,offsetRatio:100}:{}) }
+  return { id: crypto.randomUUID(), title: normalizeOcrName(enterpriseMeal || enterpriseLayout ? merchant || title : title), amount: amount ?? undefined, kind: enterpriseMeal?'expense':kind, happenedAt, merchant: merchant ? normalizeOcrName(merchant) : undefined, paymentMethod: enterpriseMeal?'公司补贴':paymentMethod ? normalizeOcrName(paymentMethod) : undefined, paymentMethodNeedsReview: alipay?.paymentMethodNeedsReview, enterpriseMealNeedsReview: enterpriseReceipt && !enterpriseMeal, confidence, rawText, details: enterpriseMeal?[{label:'识别场景',value:'大象 / 美团企业工作餐'},...details]:details, categoryPath, categoryKeyword: categoryPath?.[1], originalAmount, discountAmount, source: 'ocr', ...(enterpriseMeal?{presetKey:'meituan_enterprise_meal' as const,offsetEnabled:true,offsetRatio:100}:{}) }
 }
 
 export function parseReceiptTextBatch(rawText: string): ImportCandidate[] {
@@ -277,8 +280,8 @@ function candidateQuality(candidates: ImportCandidate[]): number {
 export function retainEnterpriseMealScene(candidate: ImportCandidate, evidence: ImportCandidate[]): ImportCandidate {
   if(candidate.presetKey==='meituan_enterprise_meal')return candidate
   const scene=evidence.find(item=>item.presetKey==='meituan_enterprise_meal')
-  if(!scene)return candidate
-  return {...candidate,presetKey:'meituan_enterprise_meal',kind:'expense',paymentMethod:'公司补贴',paymentMethodNeedsReview:false,offsetEnabled:true,offsetRatio:100,title:scene.merchant||scene.title||candidate.title,merchant:scene.merchant||candidate.merchant,categoryPath:scene.categoryPath,categoryKeyword:scene.categoryKeyword}
+  if(!scene)return evidence.some(item=>item.enterpriseMealNeedsReview)?{...candidate,enterpriseMealNeedsReview:true}:candidate
+  return {...candidate,presetKey:'meituan_enterprise_meal',kind:'expense',paymentMethod:'公司补贴',paymentMethodNeedsReview:false,enterpriseMealNeedsReview:false,offsetEnabled:true,offsetRatio:100,title:scene.merchant||candidate.merchant||scene.title||candidate.title,merchant:scene.merchant||candidate.merchant,categoryPath:scene.categoryPath,categoryKeyword:scene.categoryKeyword}
 }
 
 async function receiptHeaderImage(file: File, lines: Line[]): Promise<Blob | null> {

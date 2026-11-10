@@ -16,6 +16,12 @@ export function isMeituanWorkMeal(line: string): boolean {
   return /^(?:业务场景\s*[:：]?\s*)?工作餐$/.test(line)
 }
 
+export function isPaidMeituanEnterpriseReceipt(lines: string[]): boolean {
+  const text = lines.join('')
+  return lines.some(line => /已支付/.test(line))
+    && (/开票信息.{0,35}企业订单.{0,35}美团/.test(text) || (/美团企业版/.test(text) && /企业订单|业务场景/.test(text)))
+}
+
 export function meituanEnterpriseLayout(lines: string[]) {
   // This screen has right-aligned values. OCR can omit its pale left-hand labels.
   const invoice = lines.findIndex(line => /开票信息.*企业订单.*美团/.test(line))
@@ -27,8 +33,7 @@ export function meituanEnterpriseLayout(lines: string[]) {
   const merchant = lines.findIndex((line, index) => index > order && Boolean(line) && !/^消费商家\s*[:：]?$/.test(line))
   if (merchant < 0 || !/\p{Script=Han}/u.test(lines[merchant]!)
     || /^(?:业务场景|支付方式|订单编号|工作餐)/.test(lines[merchant]!)) return
-  const scene = lines.slice(merchant + 1).find(line => line && !/^业务场景\s*[:：]?$/.test(line))
-  return { date, order, merchant, workMeal: Boolean(scene && isMeituanWorkMeal(scene)) }
+  return { date, order, merchant }
 }
 
 export function isWeChatDetail(lines: string[]): boolean {
