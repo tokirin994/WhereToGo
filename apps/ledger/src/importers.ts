@@ -6,6 +6,7 @@ import { loadPdfJs, pdfOptions } from './pdfRuntime'
 import { parseAlipayDetail, isAlipayDetail, readAlipayHeader } from './alipayReceipt'
 import { normalizePaymentChannel } from './paymentChannels'
 import { normalizeReceiptText, parseWeChatDetail, isWeChatDetail, meituanEnterpriseLayout, isMeituanWorkMeal, isPaidMeituanEnterpriseReceipt } from './receiptLayout'
+import { applyReceiptEvidence, inspectReceiptRows, type OcrFieldIssue, type ReceiptRow } from './receiptEvidence'
 import { canonicalOcrFile, paintOcrRegion, ocrWorkerOptions, ocrFingerprint, OCR_REVISION, OCR_MODEL_CACHE, type OcrDiagnostic } from './ocrRuntime'
 
 export interface ImportCandidate extends Partial<Transaction> {
@@ -19,6 +20,7 @@ export interface ImportCandidate extends Partial<Transaction> {
   unboundSplitCount?: number
   paymentMethodNeedsReview?: boolean
   ocrDiagnostic?: OcrDiagnostic
+  ocrIssues?: OcrFieldIssue[]
 }
 
 const parseAmount = (text: string): number | null => {
@@ -366,7 +368,7 @@ async function receiptAmountImage(file: File, lines: Line[]): Promise<Blob | nul
   finally{image?.close()}
 }
 
-async function enterpriseFieldImage(file: File, box: Line['bbox'], targetHeight: number): Promise<Blob | null> {
+async function receiptRegionImage(file: File, box: Line['bbox'], targetHeight: number): Promise<Blob | null> {
   const image = await loadOcrImage(file)
   try {
     const x0 = Math.max(0, box.x0), y0 = Math.max(0, box.y0)
@@ -387,8 +389,6 @@ async function enterpriseFieldImage(file: File, box: Line['bbox'], targetHeight:
     return blob
   } finally { image.close() }
 }
-
-type ReceiptRow = Pick<Line, 'text' | 'bbox'>
 
 function enterpriseCropPlan(rows: ReceiptRow[], candidate: ImportCandidate, width: number) {
   const text = rows.map(row => normalizeReceiptText(row.text))
@@ -436,7 +436,7 @@ async function refineEnterpriseReceipt(
       const { merchant, sceneRight, step } = plan
       if (!candidate.presetKey && step) {
         for (const { left, padding, height } of [{ left: .7, padding: 6, height: 48 }, { left: .8, padding: 16, height: 40 }]) {
-          const crop = await enterpriseFieldImage(file, {
+          const crop = await receiptRegionImage(file, {
             x0: Math.round(sceneRight * left), x1: sceneRight + 12,
             y0: merchant.y0 + step - padding, y1: merchant.y1 + step + padding,
           }, height)
@@ -456,7 +456,7 @@ async function refineEnterpriseReceipt(
       if (check.merchant === 'pending') {
         const reads = new Set<string>()
         for (const height of [40, 48, 30, 34]) {
-          const crop = await enterpriseFieldImage(file, merchant, height)
+          const crop = await receiptRegionImage(file, merchant, height)
           if (!crop) continue
           const read = await worker.recognize(crop)
           const name = normalizeEnterpriseMerchant(read.data.text.trim())
@@ -474,6 +474,40 @@ async function refineEnterpriseReceipt(
   } catch {
     check.failed = true
   } finally { await worker?.terminate() }
+}
+
+async function reviewReceiptFields(
+  file: File, candidate: ImportCandidate, rows: ReceiptRow[][], assetBase: string, width: number,
+  onProgress?: (progress: OcrProgress) => void,
+) {
+  const evidence = inspectReceiptRows(rows)
+  const label = evidence.unreadAmountLabel
+  // Only a lone left-hand amount label warrants a guessed crop. When two
+  // visibly different totals compete, leave the decision to the user.
+  if (!candidate.amount && !evidence.observed.has('amount') && label && label.x1 < width * .55) {
+    const region = { ...label, x0: label.x1 + 4, x1: Math.round(width * .96) }
+    let worker: Awaited<ReturnType<typeof createWorker>> | undefined
+    try {
+      onProgress?.({ status: '正在复读金额所在行', progress: .97 })
+      worker = await createWorker('eng', 1, ocrWorkerOptions(assetBase))
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE, tessedit_char_whitelist: '0123456789.,-+¥￥' })
+      const reads = []
+      for (const height of [38, 50]) {
+        const crop = await receiptRegionImage(file, region, height)
+        if (!crop) break
+        const read = await worker.recognize(crop)
+        const text = read.data.text.trim().replace(/^[-+]?\s*[¥￥]?\s*/, '')
+        if (read.data.confidence < 75 || !/^(?:\d{1,8}|\d{1,3}(?:,\d{3}){1,2})\.\d{2}$/.test(text)) break
+        reads.push(Math.round(Number(text.replaceAll(',', '')) * 100))
+      }
+      if (reads[0] && reads[0] === reads[1]) {
+        evidence.observed.set('amount', [{ value: reads[0], region }])
+        evidence.regions.set('amount', region)
+      }
+    } catch { /* Leave an explicit review prompt if the extra read fails. */ }
+    finally { await worker?.terminate() }
+  }
+  applyReceiptEvidence(candidate, evidence, parseDate)
 }
 
 async function refinePaymentField(file: File, lines: Line[], candidates: ImportCandidate[], assetBase: string, onProgress?: (progress: OcrProgress) => void) {
@@ -608,6 +642,7 @@ export async function recognizeImage(file: File, onProgress?: (progress: OcrProg
   } finally { await worker.terminate() }
   if (diagnostic && candidates[0]) await refineEnterpriseReceipt(file, candidates[0], [receiptLines, enhancedRows], assetBase, diagnostic, onProgress)
   const refined=await refinePaymentField(file, receiptLines, candidates, assetBase, onProgress)
+  if (diagnostic && refined[0]) await reviewReceiptFields(file, refined[0], [receiptLines, enhancedRows], assetBase, diagnostic.width, onProgress)
   return refined.map(candidate=>({...candidate,ocrDiagnostic:diagnostic}))
 }
 
