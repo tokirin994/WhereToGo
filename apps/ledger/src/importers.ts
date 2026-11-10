@@ -245,7 +245,7 @@ async function loadOcrImage(file: File): Promise<{source: CanvasImageSource; wid
   }
 }
 
-async function makeEnhancedImage(file: File): Promise<Blob | null> {
+async function makeEnhancedImage(file: File) {
   let bitmap: Awaited<ReturnType<typeof loadOcrImage>> | undefined
   try {
     bitmap = await loadOcrImage(file)
@@ -265,9 +265,10 @@ async function makeEnhancedImage(file: File): Promise<Blob | null> {
       data[i] = data[i + 1] = data[i + 2] = enhanced
     }
     context.putImageData(image, 0, 0)
+    const scaleX = canvas.width / bitmap.width, scaleY = canvas.height / bitmap.height
     const blob=await new Promise<Blob|null>(resolve => canvas.toBlob(resolve, 'image/png'))
     canvas.width=canvas.height=0
-    return blob
+    return blob ? { blob, scaleX, scaleY } : null
   } catch { return null }
   finally { bitmap?.close() }
 }
@@ -366,10 +367,12 @@ async function receiptAmountImage(file: File, lines: Line[]): Promise<Blob | nul
 }
 
 async function enterpriseFieldImage(file: File, box: Line['bbox'], targetHeight: number): Promise<Blob | null> {
-  const { x0, y0, x1, y1 } = box
   const image = await loadOcrImage(file)
   try {
+    const x0 = Math.max(0, box.x0), y0 = Math.max(0, box.y0)
+    const x1 = Math.min(image.width, box.x1), y1 = Math.min(image.height, box.y1)
     const width = x1 - x0, height = y1 - y0
+    if (width <= 0 || height <= 0) return null
     const scale = targetHeight / height, padding = 18
     const canvas = document.createElement('canvas')
     canvas.width = Math.ceil(width * scale) + 2 * padding
@@ -383,6 +386,94 @@ async function enterpriseFieldImage(file: File, box: Line['bbox'], targetHeight:
     canvas.width = canvas.height = 0
     return blob
   } finally { image.close() }
+}
+
+type ReceiptRow = Pick<Line, 'text' | 'bbox'>
+
+function enterpriseCropPlan(rows: ReceiptRow[], candidate: ImportCandidate, width: number) {
+  const text = rows.map(row => normalizeReceiptText(row.text))
+  const layout = meituanEnterpriseLayout(text)
+  const stem = normalizeEnterpriseMerchant(candidate.merchant || candidate.title || '').split(/[（(《〈]/)[0]?.trim()
+  const merchantRow = layout ? rows[layout.merchant] : rows.find((_, index) =>
+    /^消费商家\s*[:：]?\s*\p{Script=Han}+/u.test(text[index]!)
+    || (stem && stem.length >= 3 && normalizeEnterpriseMerchant(text[index]!).startsWith(stem)))
+  if (!merchantRow) return
+
+  const merchant = merchantRow.bbox
+  const invoice = rows.find((_, index) => /开票信息/.test(text[index]!))?.bbox
+  const order = layout ? rows[layout.order]?.bbox : undefined
+  const date = layout ? rows[layout.date]?.bbox : undefined
+  const height = merchant.y1 - merchant.y0
+  const measuredStep = order && date && (merchant.y0 - date.y0) / 2
+  // In this layout the scene follows the merchant by one row, and the
+  // merchant is three rows below the invoice label even if a row was missed.
+  const step = measuredStep || (invoice && (merchant.y0 - invoice.y0) / 3)
+  const sceneRight = order?.x1 || Math.round(width * .93)
+  return { merchant, sceneRight, step: step && step > height && step < height * 5 ? step : undefined }
+}
+
+async function refineEnterpriseReceipt(
+  file: File, candidate: ImportCandidate, passes: ReceiptRow[][], assetBase: string, diagnostic: OcrDiagnostic,
+  onProgress?: (progress: OcrProgress) => void,
+) {
+  if (!candidate.presetKey && !candidate.enterpriseMealNeedsReview) return
+  const check: NonNullable<OcrDiagnostic['enterpriseCheck']> = {
+    row: 'missing', scene: candidate.presetKey ? 'confirmed' : 'pending', merchant: 'pending',
+  }
+  diagnostic.enterpriseCheck = check
+  const plans = passes.map(rows => enterpriseCropPlan(rows, candidate, diagnostic.width))
+  if (!plans.some(Boolean)) return
+  let worker: Awaited<ReturnType<typeof createWorker>> | undefined
+  try {
+    onProgress?.({ status: '正在核对企业账单的商户和业务场景', progress: 0.95 })
+    // Release the mixed-language page worker before starting the Chinese line
+    // reader so a failed model switch cannot skip both verification steps.
+    worker = await createWorker('chi_sim', 1, ocrWorkerOptions(assetBase))
+    await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE })
+    for (const [index, plan] of plans.entries()) {
+      if (!plan) continue
+      check.row = index === 0 ? 'original' : 'enhanced'
+      const { merchant, sceneRight, step } = plan
+      if (!candidate.presetKey && step) {
+        for (const { left, padding, height } of [{ left: .7, padding: 6, height: 48 }, { left: .8, padding: 16, height: 40 }]) {
+          const crop = await enterpriseFieldImage(file, {
+            x0: Math.round(sceneRight * left), x1: sceneRight + 12,
+            y0: merchant.y0 + step - padding, y1: merchant.y1 + step + padding,
+          }, height)
+          if (!crop) continue
+          const read = await worker.recognize(crop)
+          if (read.data.confidence >= 65 && isMeituanWorkMeal(normalizeReceiptText(read.data.text))) {
+            Object.assign(candidate, {
+              presetKey: 'meituan_enterprise_meal', kind: 'expense', paymentMethod: '公司补贴', paymentMethodNeedsReview: false,
+              enterpriseMealNeedsReview: false, offsetEnabled: true, offsetRatio: 100,
+            })
+            candidate.details.unshift({ label: '识别场景', value: '大象 / 美团企业工作餐' })
+            check.scene = 'confirmed'
+            break
+          }
+        }
+      }
+      if (check.merchant === 'pending') {
+        const reads = new Set<string>()
+        for (const height of [40, 48, 30, 34]) {
+          const crop = await enterpriseFieldImage(file, merchant, height)
+          if (!crop) continue
+          const read = await worker.recognize(crop)
+          const name = normalizeEnterpriseMerchant(read.data.text.trim())
+          if (read.data.confidence < 65 || !/\p{Script=Han}/u.test(name)) continue
+          if (reads.has(name)) {
+            candidate.title = candidate.merchant = name
+            check.merchant = 'confirmed'
+            break
+          }
+          reads.add(name)
+        }
+      }
+      if (check.scene === 'confirmed' && check.merchant === 'confirmed') break
+    }
+  } catch {
+    check.failed = true
+  } finally { await worker?.terminate() }
 }
 
 async function refinePaymentField(file: File, lines: Line[], candidates: ImportCandidate[], assetBase: string, onProgress?: (progress: OcrProgress) => void) {
@@ -416,6 +507,7 @@ export async function recognizeImage(file: File, onProgress?: (progress: OcrProg
     logger: event => onProgress?.({ status: event.status, progress: event.progress }),
   })
   let candidates: ImportCandidate[] = [], receiptLines: Line[] = [],diagnostic:OcrDiagnostic|undefined
+  let enhancedRows: ReceiptRow[] = []
   try {
     onProgress?.({ status: '正在识别原图', progress: 0.08 })
     await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO, preserve_interword_spaces: '0' })
@@ -432,7 +524,14 @@ export async function recognizeImage(file: File, onProgress?: (progress: OcrProg
     if (enhanced) {
       onProgress?.({ status: '正在识别增强图片并校对结果', progress: 0.52 })
       await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_COLUMN })
-      try { enhancedText = (await worker.recognize(enhanced)).data.text } catch { /* Keep the original and continue the header pass. */ }
+      try {
+        const result = await worker.recognize(enhanced.blob, {}, { blocks: true })
+        enhancedText = result.data.text
+        enhancedRows = (result.data.blocks || []).flatMap(block => block.paragraphs.flatMap(paragraph => paragraph.lines.map(({ text, bbox }) => ({
+          text,
+          bbox: { x0: bbox.x0 / enhanced.scaleX, x1: bbox.x1 / enhanced.scaleX, y0: bbox.y0 / enhanced.scaleY, y1: bbox.y1 / enhanced.scaleY },
+        }))))
+      } catch { /* Keep the original and continue the header pass. */ }
     }
     const enhancedCandidates = [parseReceiptText(enhancedText)]
     candidates = candidateQuality(enhancedCandidates) >= candidateQuality(originalCandidates) ? enhancedCandidates : originalCandidates
@@ -506,56 +605,8 @@ export async function recognizeImage(file: File, onProgress?: (progress: OcrProg
       }
     }
     candidates=candidates.map(candidate=>retainEnterpriseMealScene(candidate,[...originalCandidates,...enhancedCandidates]))
-    const layout = meituanEnterpriseLayout(receiptLines.map(line => normalizeReceiptText(line.text)))
-    if (layout) {
-      const merchantRow = receiptLines[layout.merchant]!
-      try {
-        onProgress?.({ status: '正在核对企业账单的商户和业务场景', progress: 0.95 })
-        await worker.reinitialize('chi_sim', 1)
-        await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE })
-        if (!candidates[0]?.presetKey) {
-          // The scene value is right-aligned on the next row, even if its
-          // whole-page OCR text is missing or unreadable.
-          const order = receiptLines[layout.order]!.bbox
-          const date = receiptLines[layout.date]!.bbox
-          const merchant = merchantRow.bbox
-          const step = merchant.y0 - order.y0
-          if (step > merchant.y1 - merchant.y0 && Math.abs(step - (order.y0 - date.y0)) < step * .25) {
-            for (const { left, padding, height } of [{ left: .7, padding: 6, height: 48 }, { left: .8, padding: 16, height: 40 }]) {
-              const scene = await enterpriseFieldImage(file, {
-                x0: Math.round(order.x1 * left), x1: order.x1 + 12,
-                y0: merchant.y0 + step - padding, y1: merchant.y1 + step + padding,
-              }, height)
-              if (!scene) continue
-              const read = await worker.recognize(scene)
-              if (read.data.confidence >= 65 && isMeituanWorkMeal(normalizeReceiptText(read.data.text))) {
-                const receipt = receiptLines.map(line => line.text).slice(0, layout.merchant + 1).join('\n')
-                const corrected = parseReceiptText(receipt + '\n业务场景 工作餐')
-                const current = candidates[0]!
-                candidates[0] = retainEnterpriseMealScene(current, [corrected])
-                break
-              }
-            }
-          }
-        }
-        const reads = new Set<string>()
-        for (const height of [40, 48, 30, 34]) {
-          const crop = await enterpriseFieldImage(file, merchantRow.bbox, height)
-          if (!crop) continue
-          const read = await worker.recognize(crop)
-          const name = normalizeEnterpriseMerchant(read.data.text.trim())
-          if (read.data.confidence < 65 || !/\p{Script=Han}/u.test(name)) continue
-          // Smaller crops can help with compressed screenshots, but only use
-          // a name when two independent line reads agree.
-          if (reads.has(name)) {
-            candidates[0]!.title = candidates[0]!.merchant = name
-            break
-          }
-          reads.add(name)
-        }
-      } catch { /* Keep the merchant read from the whole image. */ }
-    }
   } finally { await worker.terminate() }
+  if (diagnostic && candidates[0]) await refineEnterpriseReceipt(file, candidates[0], [receiptLines, enhancedRows], assetBase, diagnostic, onProgress)
   const refined=await refinePaymentField(file, receiptLines, candidates, assetBase, onProgress)
   return refined.map(candidate=>({...candidate,ocrDiagnostic:diagnostic}))
 }
