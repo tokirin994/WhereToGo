@@ -3,7 +3,7 @@ export const OCR_REVISION = 'receipt-20261110-r10'
 export const OCR_MODEL_CACHE = 'smartledger-models-7-b8a23f10-45b4cb34-499c9924'
 
 export interface OcrDiagnostic {
-  revision: string; modelCache: string; sourceSha256: string; normalizedSha256: string
+  revision: string; modelCache: string; sourceSha256: string; normalizedSha256?: string
   sourceBytes: number; width: number; height: number; engine: string
   enterpriseCheck?: { row: 'original' | 'enhanced' | 'missing'; scene: 'confirmed' | 'pending'; merchant: 'confirmed' | 'pending'; failed?: boolean }
 }

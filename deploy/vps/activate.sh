@@ -18,6 +18,10 @@ docker build --memory=768m --memory-swap=768m -t wheretogo-vps-postgis:16 -f Pos
 docker build --memory=768m --memory-swap=768m -t wheretogo-vps-identity:26.8.1 -f Identity.Dockerfile .
 docker build --memory=512m --memory-swap=512m -t wheretogo-vps-travel:java8 --build-arg ARTIFACT=app/travel.jar -f Api.Dockerfile .
 docker build --memory=512m --memory-swap=512m -t wheretogo-vps-ledger:java8 --build-arg ARTIFACT=app/ledger.jar -f Api.Dockerfile .
+if docker compose config --services | grep -qx ledger-ocr; then
+ docker build --memory=512m --memory-swap=512m -t wheretogo-vps-ocr:ppocr-v6 ledger-ocr
+ docker compose up -d --no-build ledger-ocr
+fi
 docker compose up -d db identity
 # Import only creates a missing realm; update existing realms without resetting users.
 bash configure-applications.sh

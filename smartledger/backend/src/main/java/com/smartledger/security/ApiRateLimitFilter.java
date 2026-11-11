@@ -45,6 +45,7 @@ public final class ApiRateLimitFilter extends OncePerRequestFilter {
         if(identity!=null)accepted=accepted&&allow("user:"+identity,policy.getRequestsPerMinute());
         if(identity!=null&&write)accepted=accepted&&allow("write:"+identity,policy.getWritesPerMinute());
         if(identity!=null&&request.getRequestURI().startsWith("/api/v1/sync/nutstore"))accepted=accepted&&allow("dav:"+identity,policy.getWebdavRequestsPerMinute());
+        if(identity!=null&&"POST".equals(request.getMethod())&&"/api/v1/ocr/recognize".equals(request.getRequestURI()))accepted=accepted&&allow("ocr:"+identity,6);
         if(!accepted){response.setHeader("Retry-After",String.valueOf(60-System.currentTimeMillis()/1000%60));ApiErrors.write(request,response,429,"rate_limited","请求过于频繁，请稍后再试");return;}
         chain.doFilter(request,response);
     }

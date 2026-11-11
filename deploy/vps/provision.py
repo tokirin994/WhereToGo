@@ -54,5 +54,14 @@ if not os.path.isdir(imports):os.makedirs(imports)
 os.chown(imports,1000,1000);os.chmod(imports,0o700)
 path=imports+'/personal-realm.json'
 write(path,json.dumps(config,ensure_ascii=True)+'\n',0o400);os.chown(path,1000,1000)
-write('.env','PUBLIC_ORIGIN='+origin+'\nPUBLIC_HOST='+parsed.hostname+'\nAPI_ALLOWED_SUBJECTS=\nAPI_ALLOW_ANY_AUTHENTICATED_USER=true\n')
+previous_env = root+'/current/.env'
+ocr_was_enabled = False
+if os.path.isfile(previous_env):
+ with open(previous_env) as previous:
+  ocr_was_enabled = any(line.strip() == 'SMARTLEDGER_OCR_URL=http://ledger-ocr:8080' for line in previous)
+enable_ocr = os.environ.get('WTG_ENABLE_ENHANCED_OCR', '1' if ocr_was_enabled else '0') == '1'
+env = 'PUBLIC_ORIGIN='+origin+'\nPUBLIC_HOST='+parsed.hostname+'\nAPI_ALLOWED_SUBJECTS=\nAPI_ALLOW_ANY_AUTHENTICATED_USER=true\n'
+if enable_ocr:
+ env += 'COMPOSE_PROFILES=enhanced-ocr\nSMARTLEDGER_OCR_URL=http://ledger-ocr:8080\n'
+write('.env', env)
 print('Provisioned public registration; existing accounts and private secrets preserved')

@@ -117,6 +117,7 @@ services:
       API_OIDC_JWK_SET_URI: ${PUBLIC_ORIGIN}/identity/realms/personal/protocol/openid-connect/certs
       SMARTLEDGER_ALLOWED_ORIGINS: ${PUBLIC_ORIGIN}
       SMARTLEDGER_PUBLIC_URL: ${PUBLIC_ORIGIN}/ledger/
+      SMARTLEDGER_OCR_URL: ${SMARTLEDGER_OCR_URL:-}
       API_ALLOWED_SUBJECTS: ${API_ALLOWED_SUBJECTS:-}
       API_ALLOW_ANY_AUTHENTICATED_USER: ${API_ALLOW_ANY_AUTHENTICATED_USER:-false}
       SMARTLEDGER_CREDENTIAL_KEY_FILE: /run/secrets/credential-keyring.json
@@ -129,8 +130,19 @@ services:
       - {source: ledger-password, target: spring.datasource.password}
       - {source: ledger-migration-password, target: spring.flyway.password}
       - {source: credential-keyring, target: credential-keyring.json}
-    networks: [edge, ledger-data]
+    networks: [edge, ledger-data, ocr-data]
     depends_on: {db: {condition: service_healthy}}
+
+  ledger-ocr:
+    <<: *api
+    profiles: [enhanced-ocr]
+    build: {context: ./ledger-ocr}
+    image: wheretogo-vps-ocr:ppocr-v6
+    cpus: 0.75
+    mem_limit: 512m
+    memswap_limit: 512m
+    pids_limit: 64
+    networks: [ocr-data]
 
   gateway:
     <<: *service
@@ -155,6 +167,7 @@ networks:
   edge: {ipam: {config: [{subnet: 172.29.231.0/24}]}}
   travel-data: {internal: true}
   ledger-data: {internal: true}
+  ocr-data: {internal: true}
   identity-data: {internal: true}
 volumes:
   identity-data:

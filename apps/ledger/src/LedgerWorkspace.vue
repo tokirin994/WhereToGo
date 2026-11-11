@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { User } from 'oidc-client-ts'
 import { parseBillFile, type ImportCandidate, type OcrProgress } from './importers'
+import { requestEnhancedReceipt } from './enhancedOcr'
 import { normalizeOcrName } from './ocrText'
 import { applyImportDefaults, ensureCompanySubsidyCategory } from './importDefaults'
 import { downloadBookExport, type BookExportFormat } from './bookExport'
@@ -99,6 +100,7 @@ const categoryEditorOpen = ref(false)
 const editingCategoryId = ref<string | null>(null)
 const candidates = ref<ImportCandidate[]>([])
 const candidateDraft = ref<ImportCandidate | null>(null)
+const enhancedOcrAvailable = ref(false)
 const candidateError = ref('')
 const importSources = ref<ImportSource[]>([])
 const importBusy = ref(false)
@@ -201,6 +203,13 @@ async function bootstrap() {
   finally { loading.value=false }
 }
 onMounted(bootstrap)
+watch(activeTab, async tab => {
+  if (tab !== 'import' || enhancedOcrAvailable.value || !props.apiUrl) return
+  try {
+    const response = await authorizedRequest(props.apiUrl, props.user.access_token, '/api/v1/ocr/status')
+    if (response.ok) enhancedOcrAvailable.value = (await response.json()).available === true
+  } catch { /* Local OCR is available without the worker. */ }
+})
 onUnmounted(()=>{importSessionAlive=false;for(const source of importSources.value)URL.revokeObjectURL(source.url);if(periodicSyncTimer)window.clearInterval(periodicSyncTimer);if(midnightSyncTimer)window.clearTimeout(midnightSyncTimer)})
 
 function scheduleMidnightSync(){if(midnightSyncTimer)window.clearTimeout(midnightSyncTimer);if(!snapshot.value.settings.cloudSyncEnabled||!snapshot.value.settings.midnightSyncEnabled)return;const next=new Date();next.setHours(24,0,5,0);midnightSyncTimer=window.setTimeout(()=>{void syncNow(false).finally(scheduleMidnightSync)},Math.max(1000,next.getTime()-Date.now()))}
@@ -492,7 +501,17 @@ function openCandidateEditor(candidate:ImportCandidate){
   }catch(cause){error.value=cause instanceof Error?`打开编辑失败：${cause.message}`:'打开编辑失败'}
 }
 function closeCandidateEditor(){if(!savingCandidates.value.size){candidateDraft.value=null;candidateError.value=''}}
-function updateCandidate(candidate:ImportCandidate){const index=candidates.value.findIndex(item=>item.id===candidate.id);if(index>=0)candidates.value[index]=candidate;closeCandidateEditor();notify('修改已保留，请确认后入账')}
+function enhanceReceipt(file: File) {
+  return requestEnhancedReceipt(props.apiUrl, props.user.access_token, file)
+}
+function updateCandidate(candidate:ImportCandidate){
+  const index=candidates.value.findIndex(item=>item.id===candidate.id)
+  if(index>=0)candidates.value[index]=candidate
+  const source=importSources.value.find(item=>item.id===candidate.sourceId)
+  if(source?.kind==='image')source.recognizedResult=candidate
+  closeCandidateEditor()
+  notify('修改已保留，请确认后入账')
+}
 async function saveCandidate(candidate:ImportCandidate,dateInput=candidate.happenedAtLocal){
   if(savingCandidates.value.size||savingEntry.value)return false
   savingCandidates.value.add(candidate.id);candidateError.value=''
@@ -504,7 +523,7 @@ async function saveCandidate(candidate:ImportCandidate,dateInput=candidate.happe
     if(!occurredAt||Number.isNaN(occurredAt.getTime()))throw new Error('请对照原件补全订单日期时间后再入账')
     if(!candidate.title?.trim()||!Number.isFinite(candidate.amount)||Number(candidate.amount)<=0)throw new Error('请补全流水名称和大于 0 的金额')
     let offsetCategoryId=candidate.offsetCategoryId
-    const useCompanySubsidy=candidate.enterpriseMealNeedsReview&&candidate.paymentMethod==='公司补贴'&&!offsetCategoryId
+    const useCompanySubsidy=(candidate.enterpriseMealNeedsReview||candidate.presetKey)&&candidate.paymentMethod==='公司补贴'&&!offsetCategoryId
     if(candidate.offsetEnabled){
       if(candidate.kind==='income'||!Number.isFinite(candidate.offsetRatio)||Number(candidate.offsetRatio)<=0||Number(candidate.offsetRatio)>100)throw new Error('请核对抵扣比例及流水类型')
       if(useCompanySubsidy){
@@ -585,7 +604,7 @@ watch(()=>[snapshot.value.settings.cloudSyncEnabled,snapshot.value.settings.midn
 
 <TransactionsPage v-if="activeTab==='transactions'&&!bookId" v-model="transactionFilters" :transactions="snapshot.transactions" :categories="flatCategories" :books="snapshot.books" :appearance-mode="snapshot.settings.appearanceMode" @create="openEntry()" @edit="openEntry" @delete="deleteTransaction" />
       <OcrImportWorkbench v-if="activeTab==='import'" v-model:selected-ids="selectedCandidateIds" :sources="importSources" :candidates="candidates" :snapshot="snapshot" :busy="importBusy" :saving="savingCandidates.size>0" :status="importStatus" :progress="importProgress" @files="importFiles" @preview="openImportPreview" @remove="removeImportSource" @retry="retryImportSource" @clear="clearImportSession" @edit="openCandidateEditor" @confirm="saveCandidate($event)" @confirm-selected="saveSelectedCandidates"/>
-      <OcrCandidateEditor v-if="candidateDraft" :key="candidateDraft.id" :candidate="candidateDraft" :snapshot="snapshot" :source="importSources.find(source=>source.id===candidateDraft?.sourceId)" :saving="savingCandidates.size>0" :error="candidateError" @close="closeCandidateEditor" @update="updateCandidate" @confirm="saveCandidate($event)" @preview="openImportPreview($event.sourceId||'',$event)"/>
+      <OcrCandidateEditor v-if="candidateDraft" :key="candidateDraft.id" :candidate="candidateDraft" :snapshot="snapshot" :source="importSources.find(source=>source.id===candidateDraft?.sourceId)" :saving="savingCandidates.size>0" :error="candidateError" :enhance="enhancedOcrAvailable ? enhanceReceipt : undefined" @close="closeCandidateEditor" @update="updateCandidate" @confirm="saveCandidate($event)" @preview="openImportPreview($event.sourceId||'',$event)"/>
       <ImportSourcePreview v-if="previewSource" :source="previewSource" :initial-page="previewContext?.sourcePage" :initial-row="previewContext?.sourceRow" :initial-sheet="previewContext?.sourceSheet" @close="previewSourceId=null"/>
 
       <section v-if="activeTab==='entry'" class="page-content entry-page">

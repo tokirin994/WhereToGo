@@ -38,6 +38,7 @@ try{
 foreach($file in @('compose.yml','Api.Dockerfile','Identity.Dockerfile','provision.py','activate.sh','backup.sh','init-databases.sh','host-firewall.sh','configure-operations.sh','configure-registration.sh','configure-registration.py','configure-applications.sh','configure-applications.py','backup-export.py','configure-backup-download.sh')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $output $file)}
 foreach($file in @('Postgres.Dockerfile','runtime-grants.sql')){Copy-Item -LiteralPath (Join-Path $repo "deploy\production\$file") -Destination (Join-Path $output $file)}
 Copy-Item -LiteralPath (Join-Path $repo 'identity\themes\personal') -Destination (Join-Path $output 'identity-theme') -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $repo 'smartledger\ocr') -Destination (Join-Path $output 'ledger-ocr') -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $repo 'identity\realm-local.json') -Destination (Join-Path $output 'realm-template.json')
 $caddy=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Caddyfile'))
 foreach($kind in @('portal','travel','ledger')){

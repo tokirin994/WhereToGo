@@ -40,6 +40,7 @@ public final class ApiRequestFilter extends OncePerRequestFilter {
         }
         final ServletInputStream original=request.getInputStream();
         final int maximum=policy.getMaxRequestBytes();
+        final boolean inspectJson = !("POST".equals(request.getMethod()) && "/api/v1/ocr/recognize".equals(request.getRequestURI()));
         ServletInputStream limited=new ServletInputStream(){
             private long count;
             private int depth,items;
@@ -52,8 +53,8 @@ public final class ApiRequestFilter extends OncePerRequestFilter {
                 else if(value=='}'||value==']')depth--;
                 if(value==','||value=='{'||value=='[')if(++items>500000)throw new ComplexityExceeded();
             }
-            @Override public int read()throws IOException{int value=original.read();if(value>=0){add(1);inspect(value);}return value;}
-            @Override public int read(byte[] bytes,int offset,int length)throws IOException{int n=original.read(bytes,offset,(int)Math.min(length,maximum-count+1));add(n);for(int i=0;i<n;i++)inspect(bytes[offset+i]&255);return n;}
+            @Override public int read()throws IOException{int value=original.read();if(value>=0){add(1);if(inspectJson)inspect(value);}return value;}
+            @Override public int read(byte[] bytes,int offset,int length)throws IOException{int n=original.read(bytes,offset,(int)Math.min(length,maximum-count+1));add(n);if(inspectJson)for(int i=0;i<n;i++)inspect(bytes[offset+i]&255);return n;}
             @Override public boolean isFinished(){return original.isFinished();}
             @Override public boolean isReady(){return original.isReady();}
             @Override public void setReadListener(ReadListener listener){original.setReadListener(listener);}
