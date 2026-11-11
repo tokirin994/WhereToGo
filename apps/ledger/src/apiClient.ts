@@ -11,10 +11,16 @@ async function rejected(response:Response,method:string,path:string,provider:typ
 }
 export async function authorizedRequest(apiUrl:string,token:string,path:string,options:RequestInit={}):Promise<Response>{
   const provider=sessionToken,method=(options.method||'GET').toUpperCase()
-  const send=async(force=false)=>timedFetch(`${apiUrl.replace(/\/$/,'')}${path}`,{
-    ...options,credentials:'omit',redirect:'error',cache:'no-store',
-    headers:authenticatedJsonHeaders(provider?await provider(force):token,options),
-  })
+  const send = async (force = false) => {
+    const headers = authenticatedJsonHeaders(provider ? await provider(force) : token, options)
+    if (options.body instanceof ArrayBuffer) {
+      const contentType = new Headers(options.headers).get('Content-Type')
+      if (contentType) headers.set('Content-Type', contentType)
+    }
+    return timedFetch(`${apiUrl.replace(/\/$/,'')}${path}`, {
+      ...options, credentials:'omit', redirect:'error', cache:'no-store', headers,
+    })
+  }
   let response=await send()
   // A read may retry once after renewal; mutations must never be replayed.
   if(response.status===401&&provider&&provider===sessionToken&&method==='GET')response=await send(true)

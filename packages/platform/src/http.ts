@@ -4,7 +4,7 @@
 export function authenticatedJsonHeaders(token:string,options:RequestInit={},acceptJson=false):Headers{
   const headers=new Headers(options.headers)
   headers.set('Authorization',`Bearer ${token}`)
-  if(options.body&&!headers.has('Content-Type'))headers.set('Content-Type','application/json')
+  if(options.body)headers.set('Content-Type','application/json')
   if(acceptJson)headers.set('Accept','application/json')
   return headers
 }
